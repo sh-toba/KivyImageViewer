@@ -1,0 +1,54 @@
+DataBaseScreen:
+    name: 'ImageView'
+    fullscreen: True
+
+    BoxLayout:
+        orientation:'vertical'
+
+        AnchorLayout:
+            anchor_x:'center'
+            anchor_y:'center'
+            Image:
+                source: app.image_file
+                #source: app.image_file[root.im_index]
+            BoxLayout:
+                Button: 
+                    size_hint_x: .25
+                    text : ''
+                    background_color: 0,0,0,0
+                    on_release: app.go_previous_image()
+                Button: 
+                    size_hint_x: .5
+                    text : 'magnitude'
+                    font_size: 48
+                    color: 0,8,0,0.2
+                    background_color: 0,0,0,0
+                    on_press: print('c')
+                Button: 
+                    size_hint_x: .25
+                    text : ''
+                    background_color: 0,0,0,0
+                    on_release: app.go_next_image()
+                    
+
+        ActionBar:
+            height: 40
+            ActionView:
+                id: av2
+                ActionPrevious:
+                    title: ''
+                    app_icon_width: 0
+                    with_previous: False
+                ActionButton:
+                    text: 'Previous Image'
+                    icon: 'data/icons/go_prev.png'
+                    on_release: app.go_previous_image()
+                ActionLabel:
+                    text: '{0}/{1}'.format(app.image_idx+1, app.image_num)
+
+                ActionButton:
+                    text: 'Next Image'
+                    icon: 'data/icons/go_next.png'
+                    on_release: app.go_next_image()
+ 
+

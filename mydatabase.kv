@@ -1,0 +1,114 @@
+#:kivy 1.8.0
+#:import KivyLexer kivy.extras.highlight.KivyLexer
+#:import Factory kivy.factory.Factory
+
+<ActionSpinnerOptions@SpinnerOption>
+    background_color: .4, .4, .4, 1
+
+<ActionSpinner@Spinner+ActionItem>
+    canvas.before:
+        Color:
+            rgba: 0.128, 0.128, 0.128, 1
+        Rectangle:
+            size: self.size
+            pos: self.pos
+    border: 27, 20, 12, 12
+    #background_normal: 'atlas://data/images/defaulttheme/action_group'
+    option_cls: Factory.ActionSpinnerOptions
+
+BoxLayout:
+    orientation: 'vertical'
+
+    logo_size: 32
+    icon_size: 16
+
+    canvas.before:
+        Color:
+            rgb: .6, .6, .6
+        Rectangle:
+            size: self.size
+            source: 'data/background.png'
+
+    ActionBar:
+        ActionView:
+            id: av
+            ActionPrevious:
+                title: 'MyDataBase'
+                app_icon: 'data/icons/document.png'
+                app_icon_height: root.logo_size
+                app_icon_width: root.logo_size
+                with_previous: True
+                previous_image: 'data/icons/go_prev.png'
+                previous_image_height: root.logo_size/2
+                previous_image_width: root.logo_size/2
+                on_release: app.go_previous_screen()
+
+            ActionGroup:
+                id: imsl
+                text: '画像選択'
+                mode: 'spinner'
+                overflow_image: 'data/icons/select.png'
+                ActionButton:
+                    text: '単一選択'
+                    on_release: app.go_select_mode(False)
+                ActionButton:
+                    text: '範囲選択'
+                    on_release: app.go_select_mode(True)
+                ActionButton:
+                    text: '全選択'
+                    on_release: app.select_all_image()
+                ActionButton:
+                    text: '選択解除'
+                    on_release: app.exit_select_mode()
+
+            ActionOverflow:
+                id: tmsize
+                mode: 'spinner'
+                overflow_image: 'data/icons/thumbnail.png'
+                ActionButton:
+                    text: '極小アイコン'
+                    on_press: app.view_size=0.5
+                ActionButton:
+                    text: '小アイコン'
+                    on_press: app.view_size=1
+                ActionButton:
+                    text: '中アイコン'
+                    on_press: app.view_size=2
+                ActionButton:
+                    text: '大アイコン'
+                    on_press: app.view_size=4
+
+            ActionButton:
+                text: '削除'
+                icon: 'data/icons/trash.png'
+                icon_height: root.icon_size
+                icon_width: root.icon_size
+
+            ActionButton:
+                text: 'お気に入り'
+                icon: 'data/icons/star.png'
+                icon_height: root.icon_size
+                icon_width: root.icon_size
+
+            ActionButton:
+                text: 'しおり'
+                icon: 'data/icons/bookmark.png'
+                icon_height: root.icon_size
+                icon_width: root.icon_size
+    
+    ScreenManager:
+        id: sm
+        Screen:
+            name: 'InitialScreen'
+            BoxLayout:
+                Button:
+                    text: 'load'
+                    on_release: app.go_thumbnailview()
+    
+    
+    ProgressBar:
+        id: pb
+        size_hint_y: None
+        height: 10
+        value: app.progress
+            
