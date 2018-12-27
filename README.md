@@ -1,2 +1,2 @@
-# KivyImageViewer
-Kivyで作成する画像ビューワー
+# MyDataBaseApp_Kivy
+Kivyで作成する画像データベース
