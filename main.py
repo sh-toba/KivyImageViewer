@@ -4,27 +4,25 @@ Config.set('graphics', 'width', '1024')
 Config.set('graphics', 'height', '768')
 
 import pathlib, os, sys, glob, time, math, threading
+from itertools import chain
 
 from kivy.app import App
 from kivy.uix.widget import Widget
-from kivy.uix.behaviors import ButtonBehavior, ToggleButtonBehavior
-from kivy.uix.image import Image
 from kivy.uix.boxlayout import BoxLayout
-
+from kivy.uix.popup import Popup
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
+from kivy.uix.image import Image
+from kivy.uix.behaviors import ButtonBehavior, ToggleButtonBehavior
+from kivy.uix.screenmanager import Screen, FallOutTransition, SlideTransition, RiseInTransition
 
+from kivy.core.window import Window
 from kivy.factory import Factory
 from kivy.lang import Builder
-from kivy.properties import NumericProperty, StringProperty, BooleanProperty,\
-    ListProperty, ObjectProperty
+from kivy.properties import NumericProperty, StringProperty, BooleanProperty, ListProperty, ObjectProperty
 from kivy.clock import Clock
 from kivy.animation import Animation
-from kivy.uix.screenmanager import Screen, FallOutTransition, SlideTransition, RiseInTransition
-from kivy.uix.popup import Popup
-
 from kivy.modules import keybinding
-from kivy.core.window import Window
 
 import fonts_ja
 #from kivy.core.text import LabelBase, DEFAULT_FONT
@@ -33,6 +31,7 @@ import fonts_ja
 # デフォルトに使用するフォントを変更する
 #resource_add_path('./fonts')
 #LabelBase.register(DEFAULT_FONT, 'mplus-2c-regular.ttf') #日本語が使用できるように日本語フォントを指定する
+
 
 class JumpPopUp(BoxLayout):
     text = StringProperty()
@@ -58,22 +57,21 @@ class MyDataBaseApp(App):
 
     curdir = os.path.dirname(__file__)
 
-    #db_root =  r'data'
-
-
+    # TODO: 今は、サムネイル表示と画像ビューワのみを実装中のため、パスはべた書き
+    db_root =  r'data'
     test_dir = 'test'
 
-
-    image_color_def = ListProperty([1.0,1.0,1.0,1.0])
-    image_color_selected = ListProperty([0.0,0.6,0.8,0.5])
-    image_color_base = ListProperty([0.0,0.8,0.6,0.5])
+    DEF_IMG_COLOR = ListProperty([1.0,1.0,1.0,1.0])
+    DEF_IMG_COLOR_SELCTED = ListProperty([0.0,0.6,0.8,0.5])
+    DEF_IMG_COLOR_BASEPOINT = ListProperty([0.0,0.8,0.6,0.5])
+    EXT_LIST = ["jpg", "png"]
     
     max_thumnail = 50 # 配置する最大サムネイル数
     max_jump_button = 9 # 配置するジャンプボタン数
 
-    # thumbnailview用
-    image_list = [] # 読み込んでいる画像ファイルの絶対パス
-    image_num = NumericProperty()
+    # TODO: ListPropertyでKVファイルとリンクできない？
+    _image_list = [] # 読み込んでいる画像ファイルの絶対パス
+    image_num = NumericProperty() # ThumbnailView用
     thumbnail_loaded = {}
     image_selected = []
     image_select_mode = 0
@@ -86,7 +84,6 @@ class MyDataBaseApp(App):
 
     load_active = False
     load_cancel = False
-    update_count = 0
     
     # image_view用
     image_idx = NumericProperty()
@@ -105,20 +102,12 @@ class MyDataBaseApp(App):
         # 
         self.view_size = 1
         
-        # 先に作ってしまう作戦
-        screen = self.load_template('ThumbnailView')
-        #for i in range(self.max_thumnail_num):
-            #print('create thumbnail', i)
-            #thumbnail = self.load_template('Thumbnail')
-            #thumbnail.id = 'thumbnail-{}'.format(i)
-            #thumbnail.im_index = i
-            #thumbnail.im_source = ''
-            #self.screens['ThumbnailView'].ids.thumbnails.add_widget(thumbnail)
-            #screen.ids.thumbnails.add_widget(thumbnail)
+        # 
+        screen = self._load_template('ThumbnailView')
         sm.add_widget(screen)
         
         #
-        sm.add_widget(self.load_template('ImageView'))
+        sm.add_widget(self._load_template('ImageView'))
 
         # 
         self._keyboard = Window.request_keyboard(self._keyboard_closed, self.root, 'text')
@@ -129,34 +118,7 @@ class MyDataBaseApp(App):
         self._keyboard.bind(on_key_down=self._on_keyboard_down)
 
 
-    def _keyboard_closed(self):
-        print('My keyboard have been closed!')
-        self._keyboard.unbind(on_key_down=self._on_keyboard_down)
-        self._keyboard = None
-
-    def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
-        #print('The key', keycode, 'have been pressed')
-        #print(' - text is %r' % text)
-        #print(' - modifiers are %r' % modifiers)
-
-        # Keycode is composed of an integer + a string
-        # If we hit escape, release the keyboard
-        if keycode[1] == 'escape':
-            keyboard.release()
-
-        sm = self.root.ids.sm
-        # ImageView用のキーバインディング
-        if sm.current == 'ImageView':
-            if keycode[1] == 'left':
-                self.go_previous_image()
-            if keycode[1] in ['right','enter']:
-                self.go_next_image()
-            if keycode[1] == 'backspace':
-                self.go_previous_screen()
-
-        # Return True to accept the key. Otherwise, it will be used by
-        # the system.
-        return True
+    
 
     def close_popup(self):
         self.popup.dismiss()
@@ -169,10 +131,13 @@ class MyDataBaseApp(App):
             #sm.switch_to(self.screens['ThumbnailView'], direction='right')
 
     def go_thumbnailview(self):
-        
-        self.image_list = glob.glob(os.path.join(self.db_root, self.test_dir, '*.jpg'))
-        self.image_list.sort()
-        self.image_num = len(self.image_list)
+
+        search_dir = os.path.join(self.db_root, self.test_dir)
+        self._image_list = list(chain.from_iterable([glob.glob(os.path.join(search_dir, "*." + ext)) for ext in self.EXT_LIST]))
+
+        #self._image_list = glob.glob()
+        self._image_list.sort()
+        self.image_num = len(self._image_list)
 
         self.image_selected = []
         for i in range(self.image_num):
@@ -203,7 +168,7 @@ class MyDataBaseApp(App):
         layout.width = 48 * len(layout.children) #+ 5 * (len(layout.children)+1)
 
         #av = self.root.ids.av
-        #av.add_widget(self.load_template('ThumbnailAction'))
+        #av.add_widget(self._load_template('ThumbnailAction'))
 
         sm = self.root.ids.sm
         #sm.switch_to(screen, direction='left')
@@ -221,6 +186,8 @@ class MyDataBaseApp(App):
         return
 
     def update_jump_btns(self):
+
+        # TODO: もうちょっとスマートにかけないものか...
 
         jump_btns = list(reversed(self.root.ids.sm.get_screen('ThumbnailView').ids.jump_layout.children))
         
@@ -338,17 +305,17 @@ class MyDataBaseApp(App):
                 self.load_active = False
                 return
 
-            #print(self.image_list[i])
+            #print(self._image_list[i])
             
-            thumbnail = self.load_template('Thumbnail')
+            thumbnail = self._load_template('Thumbnail')
             thumbnail.id = 'thumbnail-{}'.format(idx)
             thumbnail.im_index = idx
-            thumbnail.im_source = self.image_list[idx]
+            thumbnail.im_source = self._image_list[idx]
 
             if self.image_selected[idx]:
-                thumbnail.im_color = self.image_color_selected
+                thumbnail.im_color = self.DEF_IMG_COLOR_SELCTED
             else:
-                thumbnail.im_color = self.image_color_def
+                thumbnail.im_color = self.DEF_IMG_COLOR
 
             #self.screens['ThumbnailView'].ids.thumbnails.add_widget(thumbnail)
             screen.ids.thumbnails.add_widget(thumbnail)
@@ -407,7 +374,7 @@ class MyDataBaseApp(App):
 
             self.wait_cancel()
 
-            self.image_file = self.image_list[im_index]
+            self.image_file = self._image_list[im_index]
             self.image_idx = im_index
 
             sm = self.root.ids.sm
@@ -421,16 +388,16 @@ class MyDataBaseApp(App):
             if self.image_select_mode == 1:
                 im_selected = not self.image_selected[im_index]
                 if im_selected:
-                    thumbnail.im_color = self.image_color_selected
+                    thumbnail.im_color = self.DEF_IMG_COLOR_SELCTED
                 else:
-                    thumbnail.im_color = self.image_color_def
+                    thumbnail.im_color = self.DEF_IMG_COLOR
                 self.image_selected[im_index] = im_selected
 
             # 複数選択
             if self.image_select_mode == 2:
 
                 if self.range_select_base is None:
-                    thumbnail.im_color = self.image_color_base
+                    thumbnail.im_color = self.DEF_IMG_COLOR_BASEPOINT
                     self.range_select_base = im_index
 
                 else:
@@ -452,7 +419,7 @@ class MyDataBaseApp(App):
         thumbnails = sorted(screen.ids.thumbnails.children, key=lambda x:x.im_index)
         for i in range(start_index, end_index+1):
             self.image_selected[i] = True
-            thumbnails[i].im_color = self.image_color_selected
+            thumbnails[i].im_color = self.DEF_IMG_COLOR_SELCTED
 
     def select_all_image(self):
 
@@ -465,10 +432,8 @@ class MyDataBaseApp(App):
         thumbnails = screen.ids.thumbnails
         for child in sorted(thumbnails.children, key=lambda x:x.im_index):
             im_index = child.im_index
-            child.im_color = self.image_color_selected
+            child.im_color = self.DEF_IMG_COLOR_SELCTED
             self.image_selected[im_index] = True
-        
-
 
     def exit_select_mode(self):
 
@@ -481,17 +446,15 @@ class MyDataBaseApp(App):
         thumbnails = screen.ids.thumbnails
         for child in sorted(thumbnails.children, key=lambda x:x.im_index):
             im_index = child.im_index
-            child.im_color = self.image_color_def
+            child.im_color = self.DEF_IMG_COLOR
             self.image_selected[im_index] = False
-        
-        
 
 
     def go_previous_image(self):
         if(self.image_idx == 0):
             return
         self.image_idx -= 1
-        self.image_file = self.image_list[self.image_idx]
+        self.image_file = self._image_list[self.image_idx]
 
         return
 
@@ -499,16 +462,44 @@ class MyDataBaseApp(App):
         if(self.image_idx == (self.image_num-1)):
             return
         self.image_idx += 1
-        self.image_file = self.image_list[self.image_idx]
+        self.image_file = self._image_list[self.image_idx]
 
         return
 
 
-    def load_template(self, file_name):
-        # kvファイル名の取得
+    def _load_template(self, file_name):
         kv_name = os.path.join(self.curdir, 'data', 'kv_template','{}.kv'.format(file_name).lower())
         instance = Builder.load_file(kv_name)
         return instance
+
+    def _keyboard_closed(self):
+        print('My keyboard have been closed!')
+        self._keyboard.unbind(on_key_down=self._on_keyboard_down)
+        self._keyboard = None
+
+    def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
+        #print('The key', keycode, 'have been pressed')
+        #print(' - text is %r' % text)
+        #print(' - modifiers are %r' % modifiers)
+
+        # Keycode is composed of an integer + a string
+        # If we hit escape, release the keyboard
+        if keycode[1] == 'escape':
+            keyboard.release()
+
+        sm = self.root.ids.sm
+        # ImageView用のキーバインディング
+        if sm.current == 'ImageView':
+            if keycode[1] == 'left':
+                self.go_previous_image()
+            if keycode[1] in ['right','enter']:
+                self.go_next_image()
+            if keycode[1] == 'backspace':
+                self.go_previous_screen()
+
+        # Return True to accept the key. Otherwise, it will be used by
+        # the system.
+        return True
 
 if __name__ == '__main__':
     MyDataBaseApp().run()

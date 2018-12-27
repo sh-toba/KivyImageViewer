@@ -11,21 +11,19 @@ DataBaseScreen:
             size_hint_y: None
             height: 0
         
-        AnchorLayout:
-            anchor_x:'center'
-            ScrollView:
-                StackLayout:
-                    id: thumbnails
+        ScrollView:
+            StackLayout:
+                id: thumbnails
 
-                    orientation: 'lr-tb'
+                orientation: 'lr-tb'
 
-                    padding: 20
-                    spacing: 10
-                    
-                    #cols: root.thumbnail_cols
-                    size_hint_y: None  #スクロール可能条件①を満たす
-                    #row_default_height: 120 #rowのheightを指定
-                    height: self.minimum_height
+                padding: 20
+                spacing: 10
+                
+                #cols: root.thumbnail_cols
+                size_hint_y: None  #スクロール可能条件①を満たす
+                #row_default_height: 120 #rowのheightを指定
+                height: self.minimum_height
         
         BoxLayout:
             orientation:'vertical'
