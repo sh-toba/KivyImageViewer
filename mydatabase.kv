@@ -1,3 +1,5 @@
+#-*- coding: shift-jis -*-
+
 #:kivy 1.8.0
 #:import KivyLexer kivy.extras.highlight.KivyLexer
 #:import Factory kivy.factory.Factory
@@ -45,53 +47,53 @@ BoxLayout:
 
             ActionGroup:
                 id: imsl
-                text: 'ç”»åƒé¸æŠ'
+                text: '‰æ‘œ‘I‘ğ'
                 mode: 'spinner'
                 overflow_image: 'data/icons/select.png'
                 ActionButton:
-                    text: 'å˜ä¸€é¸æŠ'
+                    text: '’Pˆê‘I‘ğ'
                     on_release: app.go_select_mode(False)
                 ActionButton:
-                    text: 'ç¯„å›²é¸æŠ'
+                    text: '”ÍˆÍ‘I‘ğ'
                     on_release: app.go_select_mode(True)
                 ActionButton:
-                    text: 'å…¨é¸æŠ'
-                    on_release: app.select_all_image()
+                    text: '‘S‘I‘ğ'
+                    on_release: app.select_all_image(True)
                 ActionButton:
-                    text: 'é¸æŠè§£é™¤'
-                    on_release: app.exit_select_mode()
+                    text: '‘I‘ğ‰ğœ'
+                    on_release: app.select_all_image(False)
 
             ActionOverflow:
                 id: tmsize
                 mode: 'spinner'
                 overflow_image: 'data/icons/thumbnail.png'
                 ActionButton:
-                    text: 'æ¥µå°ã‚¢ã‚¤ã‚³ãƒ³'
+                    text: '‹É¬ƒAƒCƒRƒ“'
                     on_press: app.view_size=0.5
                 ActionButton:
-                    text: 'å°ã‚¢ã‚¤ã‚³ãƒ³'
+                    text: '¬ƒAƒCƒRƒ“'
                     on_press: app.view_size=1
                 ActionButton:
-                    text: 'ä¸­ã‚¢ã‚¤ã‚³ãƒ³'
+                    text: '’†ƒAƒCƒRƒ“'
                     on_press: app.view_size=2
                 ActionButton:
-                    text: 'å¤§ã‚¢ã‚¤ã‚³ãƒ³'
+                    text: '‘åƒAƒCƒRƒ“'
                     on_press: app.view_size=4
 
             ActionButton:
-                text: 'å‰Šé™¤'
+                text: 'ƒSƒ~” '
                 icon: 'data/icons/trash.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
 
             ActionButton:
-                text: 'ãŠæ°—ã«å…¥ã‚Š'
+                text: '‚¨‹C‚É“ü‚è'
                 icon: 'data/icons/star.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
 
             ActionButton:
-                text: 'ã—ãŠã‚Š'
+                text: '‚µ‚¨‚è'
                 icon: 'data/icons/bookmark.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
@@ -103,7 +105,7 @@ BoxLayout:
             BoxLayout:
                 Button:
                     text: 'load'
-                    on_release: app.go_thumbnailview()
+                    on_release: app.go_thumbnailview('data/__tmp__/large')
     
     
     ProgressBar:

@@ -22,7 +22,7 @@ BoxLayout:
         source: root.im_source
         #source: app.thumbnail_images[root.im_index]
         #on_press: app.select_image(root.im_index)
-        on_press: app.select_image(root) # 自分自身を渡す
+        on_press: app.select_image(root)
         color: root.im_color
         nocache: True
         #color: app.get_image_color(root.im_selected)
@@ -34,7 +34,7 @@ BoxLayout:
         rows:1
         size_hint_y: None
         height:10
-        #row_default_height: 10 #rowのheightを指定
+        #row_default_height: 10
         Image: 
             source: 'data/icons/star.png'
             color: 9,0,0,.6

@@ -16,7 +16,7 @@ DataBaseScreen:
                     size_hint_x: .25
                     text : ''
                     background_color: 0,0,0,0
-                    on_release: app.go_previous_image()
+                    on_release: app.change_view_image('previous')
                 Button: 
                     size_hint_x: .5
                     text : 'magnitude'
@@ -28,7 +28,7 @@ DataBaseScreen:
                     size_hint_x: .25
                     text : ''
                     background_color: 0,0,0,0
-                    on_release: app.go_next_image()
+                    on_release: app.change_view_image('next')
                     
 
         ActionBar:
@@ -42,13 +42,13 @@ DataBaseScreen:
                 ActionButton:
                     text: 'Previous Image'
                     icon: 'data/icons/go_prev.png'
-                    on_release: app.go_previous_image()
+                    on_release: app.change_view_image('previous')
                 ActionLabel:
                     text: '{0}/{1}'.format(app.image_idx+1, app.image_num)
 
                 ActionButton:
                     text: 'Next Image'
                     icon: 'data/icons/go_next.png'
-                    on_release: app.go_next_image()
+                    on_release: app.change_view_image('next')
  
 

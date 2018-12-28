@@ -6,6 +6,7 @@ Config.set('graphics', 'height', '768')
 import pathlib, os, sys, glob, time, math, threading
 from functools import partial
 import numpy as np
+from itertools import chain
 
 from kivy.app import App
 from kivy.core.window import Window
@@ -57,17 +58,17 @@ class MyDataBaseApp(App):
 
     curdir = os.path.dirname(__file__)
 
-    db_root = r'db'
-    test_dir = 'sub'
-
     image_color_def = ListProperty([1.0,1.0,1.0,1.0])
     image_color_selected = ListProperty([0.0,0.6,0.8,0.5])
     image_color_base = ListProperty([0.0,0.8,0.6,0.5])
     
     max_thumnail = 50 # 配置する最大サムネイル数
     max_jump_button = 9 # 配置するジャンプボタン数
+    supported_ext = ["jpg", "png"]
+    animation_speed = .4
 
     # thumbnailview用
+    image_dir = StringProperty()
     image_list = ListProperty([]) # 読み込んでいる画像ファイルの絶対パス
     image_num = NumericProperty()
 
@@ -81,9 +82,9 @@ class MyDataBaseApp(App):
     divided_slice = ListProperty([0,0])
     thumbnail_num  = 0
 
-    load_active = False
+    loading_screen = False
+    loading_thumbnail = False
     load_cancel = False
-    update_count = 0
     
     # image_view用
     image_idx = NumericProperty()
@@ -96,25 +97,12 @@ class MyDataBaseApp(App):
     
     def build(self):
         self.title = 'MyDataBase'
-        self.screens = {}
+        self.view_size = 1
 
         sm = self.root.ids.sm
         
         # 
-        self.view_size = 1
-        
-        # 先に作ってしまう作戦
-        screen = self._load_template('ThumbnailView')
-        #for i in range(self.max_thumnail_num):
-            #print('create thumbnail', i)
-            #thumbnail = self._load_template('Thumbnail')
-            #thumbnail.id = 'thumbnail-{}'.format(i)
-            #thumbnail.im_index = i
-            #thumbnail.im_source = ''
-            #self.screens['ThumbnailView'].ids.thumbnails.add_widget(thumbnail)
-            #screen.ids.thumbnails.add_widget(thumbnail)
-        sm.add_widget(screen)
-
+        sm.add_widget(self._load_template('ThumbnailView'))
         self.threads['load_thumbnails'] = threading.Thread()
 
         #
@@ -129,52 +117,36 @@ class MyDataBaseApp(App):
         self._keyboard.bind(on_key_down=self._on_keyboard_down)
 
 
-    def _keyboard_closed(self):
-        print('My keyboard have been closed!')
-        self._keyboard.unbind(on_key_down=self._on_keyboard_down)
-        self._keyboard = None
-
-    def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
-        #print('The key', keycode, 'have been pressed')
-        #print(' - text is %r' % text)
-        #print(' - modifiers are %r' % modifiers)
-
-        # Keycode is composed of an integer + a string
-        # If we hit escape, release the keyboard
-        if keycode[1] == 'escape':
-            keyboard.release()
-
-        sm = self.root.ids.sm
-        # ImageView用のキーバインディング
-        if sm.current == 'ImageView':
-            if keycode[1] == 'left':
-                self.go_previous_image()
-            if keycode[1] in ['right','enter']:
-                self.go_next_image()
-            if keycode[1] == 'backspace':
-                self.go_previous_screen()
-
-        # Return True to accept the key. Otherwise, it will be used by
-        # the system.
-        return True
-
     def close_popup(self):
         self.popup.dismiss()
 
     def go_previous_screen(self):
         sm = self.root.ids.sm
+        if sm.current == 'ThumbnailView':
+            sm.transition = SlideTransition(direction='right', duration=self.animation_speed)
+            sm.current = 'InitialScreen'
+            return
+
         if sm.current == 'ImageView':
-            sm.transition = SlideTransition(direction='right')
+            sm.transition = SlideTransition(direction='right', duration=self.animation_speed)
             sm.current = 'ThumbnailView'
-            #sm.switch_to(self.screens['ThumbnailView'], direction='right')
+            return
+            
 
-    def go_thumbnailview(self):
+    # ThumbnailViewイベント
+    def go_thumbnailview(self, image_dir=None):
         
-        self.image_list = glob.glob(os.path.join(self.db_root, self.test_dir, '*.jpg'))
+        # TODO : エラーハンドリング - 不正なパス
+        if image_dir is None:
+            return
 
-        #self.image_list = ListProperty(image_list)
-        #self.image_list.sort()
+        self.image_dir = os.path.join(self.curdir, image_dir)
+        self.image_list = list(chain.from_iterable([glob.glob(os.path.join(self.image_dir, "*." + ext)) for ext in self.supported_ext]))
         self.image_num = len(self.image_list)
+
+        # TODO : エラーハンドリング
+        if self.image_num == 0:
+            pass
 
         self.image_selected = np.zeros(self.image_num, dtype=bool)
 
@@ -184,6 +156,7 @@ class MyDataBaseApp(App):
         
         # ジャンプボタンの作成
         layout = self.root.ids.sm.get_screen('ThumbnailView').ids.jump_layout
+        layout.clear_widgets()
 
         # preveous jump
         layout.add_widget(ThumbnailJump(text='<'))
@@ -207,56 +180,12 @@ class MyDataBaseApp(App):
 
         sm = self.root.ids.sm
         #sm.switch_to(screen, direction='left')
-        sm.transition = SlideTransition(direction='left')
+        sm.transition = SlideTransition(direction='left', duration=self.animation_speed)
         sm.current = 'ThumbnailView'
 
-        self.reload_thumbnails(layout.children[-2])
+        self.reload_thumbnailview(layout.children[-2])
 
-    def update_jump_btns(self):
-
-        jump_btns = list(reversed(self.root.ids.sm.get_screen('ThumbnailView').ids.jump_layout.children))
-        
-        if self.max_jump_button < self.divided_num:
-            change_num = self.max_jump_button - 2
-            if self.divided_index < change_num:
-                jump_btns[-3].text = '...'
-                jump_btns[-2].text = '{}'.format(self.divided_num)
-                for i, jump_btn in enumerate(jump_btns[1:-3]):
-                    jump_index = i+1
-                    jump_btn.text = '{}'.format(jump_index)
-
-            elif self.divided_index > (self.divided_num - change_num + 1):
-                jump_btns[2].text = '...'
-                jump_btns[1].text = '1'
-                for i, jump_btn in enumerate(jump_btns[3:-1]):
-                    jump_index = self.divided_num - (change_num-i) + 1
-                    jump_btn.text = '{}'.format(jump_index)
-
-            else:
-                change_num -= 2
-                jump_btns[1].text = '1'
-                jump_btns[2].text = '...'
-                jump_btns[-3].text = '...'
-                jump_btns[-2].text = '{}'.format(self.divided_num)
-
-                jump_btns_sub = jump_btns[3:-3]
-                for i, diff in enumerate(range(int(-change_num/2), math.ceil(change_num/2))):
-                    jump_index = self.divided_index + diff
-                    jump_btns_sub[i].text = '{}'.format(jump_index)
-
-        for jump_btn in jump_btns[1:-1]:
-            if jump_btn.text.isdecimal():
-                if self.divided_index == int(jump_btn.text):
-                    jump_btn.background_color = [0.0, 0.5, 0.8, 1.0]
-                else:
-                    jump_btn.background_color = [0.6, 0.6, 0.6, 0.8]
-
-    def open_jump_popup(self):
-        content = JumpPopUp()
-        self.popup = Popup(title="ページ移動", content=content, size_hint=(None, None), size=(400, 400), auto_dismiss=True)
-        self.popup.open()
-
-    def reload_thumbnails(self, jump_btn):
+    def reload_thumbnailview(self, jump_btn):
 
         current_idx = self.divided_index
         jump_text = jump_btn.text
@@ -296,25 +225,66 @@ class MyDataBaseApp(App):
         self.divided_slice[1] = ed_idx
         self.thumbnail_num = ed_idx - st_idx + 1 
 
-        self.update_jump_btns()
-
-        #return # テスト用
+        self._update_jump_buttons()
 
         # 既存サムネイルの削除
-        # TODO: 他のやり方のほうが良いかも
         self.root.ids.sm.get_screen('ThumbnailView').ids.thumbnails.clear_widgets()
 
-        self.threads['load_thumbnails'] = threading.Thread(target=self.add_thumbnails, daemon=True)
+        self.threads['load_thumbnails'] = threading.Thread(target=self._add_thumbnails, daemon=True)
         self.threads['load_thumbnails'].start()
 
-        #self.thread["update_thumb"] = threading.Thread(target=self.update_thumbnailview)
-        #self.thread["update_thumb"].start()
+    def open_jump_popup(self):
+        content = JumpPopUp()
+        self.popup = Popup(title="ページ移動", content=content, size_hint=(None, None), size=(400, 400), auto_dismiss=True)
+        self.popup.open()
 
+    def _update_jump_buttons(self):
 
-    def add_thumbnails(self):
-        time.sleep(0.5)
+        jump_btns = list(reversed(self.root.ids.sm.get_screen('ThumbnailView').ids.jump_layout.children))
         
-        self.load_active = False
+        if self.max_jump_button < self.divided_num:
+            change_num = self.max_jump_button - 2
+            if self.divided_index < change_num:
+                jump_btns[-3].text = '...'
+                jump_btns[-2].text = '{}'.format(self.divided_num)
+                for i, jump_btn in enumerate(jump_btns[1:-3]):
+                    jump_index = i+1
+                    jump_btn.text = '{}'.format(jump_index)
+
+            elif self.divided_index > (self.divided_num - change_num + 1):
+                jump_btns[2].text = '...'
+                jump_btns[1].text = '1'
+                for i, jump_btn in enumerate(jump_btns[3:-1]):
+                    jump_index = self.divided_num - (change_num-i) + 1
+                    jump_btn.text = '{}'.format(jump_index)
+
+            else:
+                change_num -= 2
+                jump_btns[1].text = '1'
+                jump_btns[2].text = '...'
+                jump_btns[-3].text = '...'
+                jump_btns[-2].text = '{}'.format(self.divided_num)
+
+                jump_btns_sub = jump_btns[3:-3]
+                for i, diff in enumerate(range(int(-change_num/2), math.ceil(change_num/2))):
+                    jump_index = self.divided_index + diff
+                    jump_btns_sub[i].text = '{}'.format(jump_index)
+
+        for jump_btn in jump_btns[1:-1]:
+            if jump_btn.text.isdecimal():
+                if self.divided_index == int(jump_btn.text):
+                    jump_btn.background_color = [0.0, 0.5, 0.8, 1.0]
+                else:
+                    jump_btn.background_color = [0.6, 0.6, 0.6, 0.8]
+
+    def _add_thumbnails(self):
+
+        # スクリーン移動のアニメーション用のスリープ
+        if self.loading_screen:
+            time.sleep(self.animation_speed + 0.1)
+            self.loading_screen = False
+        
+        self.loading_thumbnail = False
         screen = self.root.ids.sm.get_screen('ThumbnailView')
 
         for i, idx in enumerate(range(self.divided_slice[0], self.divided_slice[1]+1)):
@@ -322,7 +292,7 @@ class MyDataBaseApp(App):
             if self.load_cancel:
                 return
 
-            while(self.load_active):
+            while(self.loading_thumbnail):
                 pass
             
             thumbnail = self._load_template('Thumbnail')
@@ -339,14 +309,14 @@ class MyDataBaseApp(App):
 
             screen.ids.thumbnails.add_widget(thumbnail)
             
-            self.load_active = True
-            Clock.schedule_once(self.update_thumbnailview)
+            self.loading_thumbnail = True
+            Clock.schedule_once(self._update_thumbnail)
 
             self.progress = ((i+1) / self.thumbnail_num) * 100
 
         return
 
-    def update_thumbnailview(self, dt):
+    def _update_thumbnail(self, dt):
         
         try:
             #thumbnails[0].ids.image.reload()
@@ -358,10 +328,11 @@ class MyDataBaseApp(App):
                 thumbnail.im_color = self.image_color_def
             #print('reload image', thumbnails[0].im_index)
         finally:
-            self.load_active = False
+            self.loading_thumbnail = False
             return
-            #print('update end')
 
+
+    # 画像選択イベント
     def go_select_mode(self, range_selectable):
         
         if self.root.ids.sm.current != 'ThumbnailView':
@@ -373,6 +344,9 @@ class MyDataBaseApp(App):
             self.image_select_mode = 1
 
     def select_image(self, thumbnail):
+
+        if self.root.ids.sm.current != 'ThumbnailView':
+            return
 
         im_index = thumbnail.im_index
 
@@ -400,7 +374,7 @@ class MyDataBaseApp(App):
                     thumbnail.im_color = self.image_color_def
                 self.image_selected[im_index] = im_selected
 
-            # 複数選択
+            # 範囲選択
             if self.image_select_mode == 2:
 
                 if self.range_select_base is None:
@@ -414,14 +388,22 @@ class MyDataBaseApp(App):
                     else:
                         s_index = im_index
                         e_index = self.range_select_base
-
                     self.image_selected[s_index:e_index+1] = True
                     self.range_select_base = None
-                    self.update_all_thumbnail_color()
+                    self._update_all_thumbnail_color()
 
         return
 
-    def update_all_thumbnail_color(self):
+    def select_all_image(self, is_selectable):
+
+        if self.root.ids.sm.current != 'ThumbnailView':
+            return
+
+        self.image_select_mode = is_selectable
+        self.image_selected[:] = is_selectable
+        self._update_all_thumbnail_color()
+    
+    def _update_all_thumbnail_color(self):
         thumbnails = self.root.ids.sm.get_screen('ThumbnailView').ids.thumbnails
         for child in sorted(thumbnails.children, key=lambda x:x.im_index):
             if self.image_selected[child.im_index]:
@@ -430,41 +412,25 @@ class MyDataBaseApp(App):
                 child.im_color = self.image_color_def
 
 
-    def select_all_image(self):
-
-        if self.root.ids.sm.current != 'ThumbnailView':
-            return
-
-        self.image_select_mode = 1
-        self.image_selected[:] = True
-        self.update_all_thumbnail_color()
+    # ImageViewerイベント
+    def change_view_image(self, option='next', mode=None):
         
+        if mode is None:
+            tmp_diff = 1
 
-    def exit_select_mode(self):
+        if option is 'next':
+            tmp_index = self.image_idx + tmp_diff
+        elif option is 'previous':
+            tmp_index = self.image_idx - tmp_diff
 
-        if self.root.ids.sm.current != 'ThumbnailView':
+        if (tmp_index < 0) | (self.image_num-1 < tmp_index):
             return
-
-        self.image_select_mode = 0
-        self.image_selected[:] = False
-        self.update_all_thumbnail_color()
-
-
-    def go_previous_image(self):
-        if(self.image_idx == 0):
-            return
-        self.image_idx -= 1
-        self.image_file = self.image_list[self.image_idx]
+        else:
+            self.image_idx = tmp_index
+            self.image_file = self.image_list[self.image_idx]
 
         return
 
-    def go_next_image(self):
-        if(self.image_idx == (self.image_num-1)):
-            return
-        self.image_idx += 1
-        self.image_file = self.image_list[self.image_idx]
-
-        return
 
     def _load_template(self, file_name):
         # kvファイル名の取得
@@ -473,17 +439,43 @@ class MyDataBaseApp(App):
         return instance
 
     def _wait_cancel(self):
+
         if self.threads['load_thumbnails'].is_alive():
             self.load_cancel = True
             self.threads['load_thumbnails'].join()
             self.load_cancel = False
 
-        #if self.load_active :
-            #print('load cancelled')
-            #self.load_cancel = True
-            #time.sleep(1)
-            #self.load_cancel = False
         return
+    
+    def _keyboard_closed(self):
+        print('My keyboard have been closed!')
+        self._keyboard.unbind(on_key_down=self._on_keyboard_down)
+        self._keyboard = None
+
+    def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
+        #print('The key', keycode, 'have been pressed')
+        #print(' - text is %r' % text)
+        #print(' - modifiers are %r' % modifiers)
+
+        # Keycode is composed of an integer + a string
+        # If we hit escape, release the keyboard
+        if keycode[1] == 'escape':
+            keyboard.release()
+
+        sm = self.root.ids.sm
+        # ImageView用のキーバインディング
+        if sm.current == 'ImageView':
+            if keycode[1] == 'left':
+                self.go_previous_image()
+            if keycode[1] in ['right','enter']:
+                self.go_next_image()
+            if keycode[1] == 'backspace':
+                self.go_previous_screen()
+
+        # Return True to accept the key. Otherwise, it will be used by
+        # the system.
+        return True
+
 
 if __name__ == '__main__':
     MyDataBaseApp().run()
