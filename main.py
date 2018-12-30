@@ -58,14 +58,21 @@ class MyDataBaseApp(App):
 
     curdir = os.path.dirname(__file__)
 
-    image_color_def = ListProperty([1.0,1.0,1.0,1.0])
-    image_color_selected = ListProperty([0.0,0.6,0.8,0.5])
-    image_color_base = ListProperty([0.0,0.8,0.6,0.5])
+    """
+    IMAGE_COLOR = {
+        'default':ListProperty([1.0,1.0,1.0,1.0]),
+        'selected':ListProperty([0.0,0.6,0.8,0.5]),
+        'base':ListProperty([0.0,0.8,0.6,0.5]),
+        'favorite':ListProperty([1.0,0.0,0.0,0.5]),
+        'chapter':ListProperty([0.0,0.8,0.4,0.5])
+    }
+    """
     
     max_thumnail = 50 # 配置する最大サムネイル数
     max_jump_button = 9 # 配置するジャンプボタン数
     supported_ext = ["jpg", "png"]
     animation_speed = .4
+    allow_stretch = True
 
     # thumbnailview用
     image_dir = StringProperty()
@@ -73,7 +80,11 @@ class MyDataBaseApp(App):
     image_num = NumericProperty()
 
     image_selected = []
-    image_select_mode = 0
+    image_favorite = []
+    image_chapter = []
+
+    image_select_mode = 'normal' # normal:画像ビューへ, trash:ゴミ箱, favorite:お気に入り選択、chapter:チャプター選択
+    range_selectable = False
     range_select_base = None
     view_size = NumericProperty()
 
@@ -116,7 +127,6 @@ class MyDataBaseApp(App):
             pass
         self._keyboard.bind(on_key_down=self._on_keyboard_down)
 
-
     def close_popup(self):
         self.popup.dismiss()
 
@@ -149,6 +159,8 @@ class MyDataBaseApp(App):
             pass
 
         self.image_selected = np.zeros(self.image_num, dtype=bool)
+        self.image_favorite = np.zeros(self.image_num, dtype=bool)
+        self.image_chapter = np.zeros(self.image_num, dtype=bool)
 
         # 
         self.divided_index = 0
@@ -183,15 +195,21 @@ class MyDataBaseApp(App):
         sm.transition = SlideTransition(direction='left', duration=self.animation_speed)
         sm.current = 'ThumbnailView'
 
-        self.reload_thumbnailview(layout.children[-2])
+        self.reload_thumbnailview('1')
 
-    def reload_thumbnailview(self, jump_btn):
+    def reload_thumbnailview(self, jump_info):
 
         current_idx = self.divided_index
-        jump_text = jump_btn.text
+
+        if type(jump_info) is str:
+            jump_text = jump_info
+        else:
+            jump_text = jump_info.text
         
         if jump_text.isdecimal():
             next_index = int(jump_text)
+            if (next_index < 1) | (self.divided_num < next_index):
+                return
         else:
             # 一つ前へ
             if jump_text == '<':
@@ -208,6 +226,8 @@ class MyDataBaseApp(App):
             # ジャンプ
             elif jump_text == '...':
                 self.open_jump_popup()
+                return
+            else:
                 return
     
         if current_idx == next_index:
@@ -235,8 +255,12 @@ class MyDataBaseApp(App):
 
     def open_jump_popup(self):
         content = JumpPopUp()
-        self.popup = Popup(title="ページ移動", content=content, size_hint=(None, None), size=(400, 400), auto_dismiss=True)
+        self.popup = Popup(title='ページ移動', content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=True)
         self.popup.open()
+
+    def jump_thumbnail(self, text):
+        self.reload_thumbnailview(text)
+        self.popup.dismiss()
 
     def _update_jump_buttons(self):
 
@@ -276,6 +300,8 @@ class MyDataBaseApp(App):
                     jump_btn.background_color = [0.0, 0.5, 0.8, 1.0]
                 else:
                     jump_btn.background_color = [0.6, 0.6, 0.6, 0.8]
+            else:
+                jump_btn.background_color = [0.6, 0.6, 0.6, 0.8]
 
     def _add_thumbnails(self):
 
@@ -321,27 +347,49 @@ class MyDataBaseApp(App):
         try:
             #thumbnails[0].ids.image.reload()
             thumbnail = self.root.ids.sm.get_screen('ThumbnailView').ids.thumbnails.children[0]
-            thumbnail.im_source = self.image_list[thumbnail.im_index]
-            if self.image_selected[thumbnail.im_index]:
-                thumbnail.im_color = self.image_color_selected
-            else:
-                thumbnail.im_color = self.image_color_def
+
+            im_index = thumbnail.im_index
+            
+            thumbnail.im_source = self.image_list[im_index]
+            thumbnail.fa_source = 'data/icons/star.png'
+            thumbnail.ch_source = 'data/icons/bookmark.png'
+
+            thumbnail.is_selected = self.image_selected[im_index]
+            thumbnail.is_favorite = self.image_favorite[im_index]
+            thumbnail.is_chapter = self.image_chapter[im_index]
+            
             #print('reload image', thumbnails[0].im_index)
         finally:
             self.loading_thumbnail = False
             return
 
 
-    # 画像選択イベント
-    def go_select_mode(self, range_selectable):
-        
-        if self.root.ids.sm.current != 'ThumbnailView':
-            return
+    # 画像選択モード
+    def change_mode(self, mode):
 
-        if range_selectable:
-            self.image_select_mode = 2
-        else:
-            self.image_select_mode = 1
+        if self.root.ids.sm.current == 'ThumbnailView':
+
+            option_layout = self.root.ids.additional_option
+            self.image_select_mode = mode
+            self.range_selectable = False
+            if mode == 'normal':
+                self.image_selected[:] = False
+                self._update_all_thumbnail_color()
+                height = 0
+                option_layout.clear_widgets()
+            else: 
+                height = 40
+                option_layout.clear_widgets()
+                range_button = ToggleButton(text='範囲選択',size_hint_x=None,width=90, background_color=[0.128, 0.128, 0.128, 1], state='normal', background_down='atlas://data/images/defaulttheme/action_item_down')
+                range_button.bind(on_release=self.change_range_option)
+                option_layout.add_widget(range_button)
+                if mode == 'trash':
+                    delete_button = Button(text='削除',size_hint_x=None,width=80, background_color=[0.128, 0.128, 0.128, 1])
+                    delete_button.bind(on_release=self.delete_images)
+                    option_layout.add_widget(delete_button)
+
+            Animation(height=height, d=.3, t='out_quart').start(option_layout)
+
 
     def select_image(self, thumbnail):
 
@@ -351,7 +399,7 @@ class MyDataBaseApp(App):
         im_index = thumbnail.im_index
 
         # イメージビューへ 
-        if self.image_select_mode == 0:
+        if self.image_select_mode is 'normal':
 
             self._wait_cancel()
 
@@ -365,51 +413,67 @@ class MyDataBaseApp(App):
         # 画像選択モード
         else:
 
-            # 単一選択
-            if self.image_select_mode == 1:
-                im_selected = not self.image_selected[im_index]
-                if im_selected:
-                    thumbnail.im_color = self.image_color_selected
-                else:
-                    thumbnail.im_color = self.image_color_def
-                self.image_selected[im_index] = im_selected
+            # 範囲選択がONの場合
+            if self.range_selectable:
 
-            # 範囲選択
-            if self.image_select_mode == 2:
-
+                # 基準位置が未選択
                 if self.range_select_base is None:
-                    thumbnail.im_color = self.image_color_base
+                    
+                    thumbnail.is_based = True
                     self.range_select_base = im_index
-
+                
+                # 基準位置が選択済み
                 else:
+
                     if self.range_select_base < im_index:
                         s_index = self.range_select_base
                         e_index = im_index
                     else:
                         s_index = im_index
                         e_index = self.range_select_base
-                    self.image_selected[s_index:e_index+1] = True
+                    
+                    if self.image_select_mode is 'trash':
+                        self.image_selected[s_index:e_index+1] = True
+                    elif self.image_select_mode is 'favorite':
+                        self.image_favorite[s_index:e_index+1] ^= True
+                    elif self.image_select_mode is 'chapter':
+                        self.image_chapter[s_index:e_index+1] ^= True
+                    
                     self.range_select_base = None
                     self._update_all_thumbnail_color()
 
+            # 単一選択
+            else:
+                if self.image_select_mode is 'trash':
+                    self.image_selected[im_index] ^= True
+                    thumbnail.is_selected ^= True
+                elif self.image_select_mode is 'favorite':
+                    self.image_favorite[im_index] ^= True
+                    thumbnail.is_favorite ^= True
+                elif self.image_select_mode is 'chapter':
+                    self.image_chapter[im_index] ^= True
+                    thumbnail.is_chapter ^= True  
         return
 
-    def select_all_image(self, is_selectable):
+    def change_range_option(self, instance):
+        self.range_selectable ^= True
+        print('range clicked')
 
-        if self.root.ids.sm.current != 'ThumbnailView':
-            return
-
-        self.image_select_mode = is_selectable
-        self.image_selected[:] = is_selectable
-        self._update_all_thumbnail_color()
+    def delete_images(self, instance):
+        #TODO: 選択画像の削除 - データベースの方針決定が先のため保留
+        print('delete clicked')
+        pass
     
     def _update_all_thumbnail_color(self):
-        thumbnails = self.root.ids.sm.get_screen('ThumbnailView').ids.thumbnails
-        for child in sorted(thumbnails.children, key=lambda x:x.im_index):
-            if self.image_selected[child.im_index]:
-                child.im_color = self.image_color_selected
-            else:
-                child.im_color = self.image_color_def
+        
+        for child in self.root.ids.sm.get_screen('ThumbnailView').ids.thumbnails.children:
+
+            im_index = child.im_index
+
+            child.is_based = False
+            child.is_selected = self.image_selected[im_index]
+            child.is_favorite = self.image_favorite[im_index]
+            child.is_chapter = self.image_chapter[im_index] 
 
 
     # ImageViewerイベント
@@ -453,9 +517,12 @@ class MyDataBaseApp(App):
         self._keyboard = None
 
     def _on_keyboard_down(self, keyboard, keycode, text, modifiers):
-        #print('The key', keycode, 'have been pressed')
-        #print(' - text is %r' % text)
+        print('The key', keycode, 'have been pressed')
+        print(' - text is %r' % text)
         #print(' - modifiers are %r' % modifiers)
+
+        if keycode[1] == 'f1':
+            self.open_settings()
 
         # Keycode is composed of an integer + a string
         # If we hit escape, release the keyboard
@@ -466,9 +533,9 @@ class MyDataBaseApp(App):
         # ImageView用のキーバインディング
         if sm.current == 'ImageView':
             if keycode[1] == 'left':
-                self.go_previous_image()
+                self.change_view_image('previous')
             if keycode[1] in ['right','enter']:
-                self.go_next_image()
+                self.change_view_image('next')
             if keycode[1] == 'backspace':
                 self.go_previous_screen()
 

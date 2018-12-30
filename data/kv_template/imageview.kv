@@ -10,6 +10,7 @@ DataBaseScreen:
             anchor_y:'center'
             Image:
                 source: app.image_file
+                allow_stretch: True
                 #source: app.image_file[root.im_index]
             BoxLayout:
                 Button: 
@@ -29,26 +30,42 @@ DataBaseScreen:
                     text : ''
                     background_color: 0,0,0,0
                     on_release: app.change_view_image('next')
-                    
 
-        ActionBar:
-            height: 40
-            ActionView:
-                id: av2
-                ActionPrevious:
-                    title: ''
-                    app_icon_width: 0
-                    with_previous: False
-                ActionButton:
-                    text: 'Previous Image'
-                    icon: 'data/icons/go_prev.png'
-                    on_release: app.change_view_image('previous')
-                ActionLabel:
-                    text: '{0}/{1}'.format(app.image_idx+1, app.image_num)
+        BoxLayout:
+            orientation:'vertical'
+            size_hint_y: None
+            height: 70
+            spacing: 0
+            padding: 10
+            canvas.before:
+                Color:
+                    rgba: 0.128, 0.128, 0.128, 1
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
 
-                ActionButton:
-                    text: 'Next Image'
-                    icon: 'data/icons/go_next.png'
-                    on_release: app.change_view_image('next')
- 
+            AnchorLayout:
+                id: footer
+                anchor_x: 'center'
+                anchor_y: 'bottom'
+                Label:
+                    text: app.image_file
+            
+            AnchorLayout:
+                anchor_x: 'center'
+                anchor_y: 'top'
 
+                BoxLayout:
+                    size_hint_x: None
+                    width: 300
+                    padding: 0
+                    ImageButton:
+                        source: 'data/icons/go_prev.png'
+                        on_release: app.change_view_image('previous')
+                        nocache: True
+                    Label:
+                        text: '{0}/{1}'.format(app.image_idx+1, app.image_num)
+                    ImageButton:
+                        source: 'data/icons/go_next.png'
+                        on_release: app.change_view_image('next')
+                        nocache: True
