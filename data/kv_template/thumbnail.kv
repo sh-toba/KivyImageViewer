@@ -1,9 +1,21 @@
 BoxLayout:
     orientation: 'vertical'
     index: 0
+
     im_source: ''
+    fa_source: ''
+    ch_source: ''
+    
+    
     im_index: 0 
-    im_color: 1.0, 1.0, 1.0, 1.0
+    #im_color: 1.0, 1.0, 1.0, 1.0
+    #im_color_favorite: 1.0, 1.0, 1.0, 1.0
+    #im_color_chapter: 1.0, 1.0, 1.0, 1.0
+
+    is_based: False
+    is_selected: False
+    is_favorite: False
+    is_chapter: False
 
     size_hint: None, None
     #size: 
@@ -23,23 +35,27 @@ BoxLayout:
         #source: app.thumbnail_images[root.im_index]
         #on_press: app.select_image(root.im_index)
         on_press: app.select_image(root)
-        color: root.im_color
+        #color: root.im_color
+        color: [0.0,0.8,0.6,1.0] if root.is_based else [0.0,0.6,0.8,0.5] if root.is_selected else [1.0,1.0,1.0,1.0]
         nocache: True
         #color: app.get_image_color(root.im_selected)
         #size: 120*app.view_size, 90*app.view_size
 
     GridLayout:
-        id: tags
         cols:4
         rows:1
         size_hint_y: None
         height:10
         #row_default_height: 10
+        Image:
+            #source: 'data/icons/star.png'
+            source: root.fa_source
+            color: [1.0,0.0,0.0,1.0] if root.is_favorite else [1.0,1.0,1.0,1.0]
         Image: 
-            source: 'data/icons/star.png'
-            color: 9,0,0,.6
-        Image: 
-            source: 'data/icons/bookmark.png'
+            #source: 'data/icons/bookmark.png'
+            source: root.ch_source
+            color: [0.0,0.8,0.4,1.0] if root.is_chapter else [1.0,1.0,1.0,1.0]
+
 
     #CheckBox:
         #pos_hint: {'x': 0, 'y': 0}

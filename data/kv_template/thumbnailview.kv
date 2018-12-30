@@ -1,29 +1,22 @@
 DataBaseScreen:
     name: 'ThumbnailView'
     fullscreen: True
-    thumbnail_cols: 4
 
     BoxLayout:
         orientation:'vertical'
-
-        StackLayout:
-            orientation: 
-            size_hint_y: None
-            height: 0
         
-        AnchorLayout:
-            anchor_x:'center'
-            ScrollView:
-                StackLayout:
-                    id: thumbnails
+        ScrollView:
+            StackLayout:
+                id: thumbnails
 
-                    orientation: 'lr-tb'
+                orientation: 'lr-tb'
 
-                    padding: 20
-                    spacing: 10
-                    
-                    size_hint_y: None
-                    height: self.minimum_height
+                padding: 20
+                spacing: 10
+                
+                size_hint_y: None
+                height: self.minimum_height
+
         
         BoxLayout:
             orientation:'vertical'
@@ -64,19 +57,25 @@ DataBaseScreen:
 
 <JumpPopUp@BoxLayout>:
 	orientation: 'vertical'
+    spacing: 10
+    
+    input_text: ''
 
-	Label:
-		size_hint: 1, .9
-		text: 'Jump to page:(1-{})'.format(app.divided_num)
+    AnchorLayout:
+        anchor_x:'center'
+        size_hint_y:None
+        height: 30
+        TextInput:
+            text: ''
+            hint_text:  '1 - {}'.format(app.divided_num)
+            on_text: root.input_text = self.text
  
 	BoxLayout:
-		size_hint: 1, .1
 		orientation: 'horizontal'
- 
 		Button:
 			size_hint: .5, 1
 			text: 'OK'
-			on_release: app.close_popup()
+			on_release: app.jump_thumbnail(root.input_text)
  
 		Button:
 			size_hint: .5, 1

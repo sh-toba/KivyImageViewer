@@ -32,6 +32,8 @@ BoxLayout:
             source: 'data/background.png'
 
     ActionBar:
+        size_hint_y: None
+        height: 40
         ActionView:
             id: av
             ActionPrevious:
@@ -44,24 +46,6 @@ BoxLayout:
                 previous_image_height: root.logo_size/2
                 previous_image_width: root.logo_size/2
                 on_release: app.go_previous_screen()
-
-            ActionGroup:
-                id: imsl
-                text: '画像選択'
-                mode: 'spinner'
-                overflow_image: 'data/icons/select.png'
-                ActionButton:
-                    text: '単一選択'
-                    on_release: app.go_select_mode(False)
-                ActionButton:
-                    text: '範囲選択'
-                    on_release: app.go_select_mode(True)
-                ActionButton:
-                    text: '全選択'
-                    on_release: app.select_all_image(True)
-                ActionButton:
-                    text: '選択解除'
-                    on_release: app.select_all_image(False)
 
             ActionOverflow:
                 id: tmsize
@@ -80,23 +64,42 @@ BoxLayout:
                     text: '大アイコン'
                     on_press: app.view_size=4
 
-            ActionButton:
+            ActionToggleButton:
                 text: 'ゴミ箱'
                 icon: 'data/icons/trash.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
+                group: 'select_mode'
+                on_release: app.change_mode('trash') if(self.state=='down') else app.change_mode('normal')
 
-            ActionButton:
+            ActionToggleButton:
                 text: 'お気に入り'
                 icon: 'data/icons/star.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
+                group: 'select_mode'
+                on_release: app.change_mode('favorite') if(self.state=='down') else app.change_mode('normal')
 
-            ActionButton:
+            ActionToggleButton:
                 text: 'しおり'
                 icon: 'data/icons/bookmark.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
+                group: 'select_mode'
+                on_release: app.change_mode('chapter') if(self.state=='down') else app.change_mode('normal')
+
+    StackLayout:
+        id: additional_option
+        orientation:'rl-tb'
+        size_hint_y: None
+        height: 0
+
+        canvas.before:
+            Color:
+                rgba: 0.128, 0.128, 0.128, 1
+            Rectangle:
+                size: self.size
+                pos: self.pos
     
     ScreenManager:
         id: sm
@@ -105,7 +108,7 @@ BoxLayout:
             BoxLayout:
                 Button:
                     text: 'load'
-                    on_release: app.go_thumbnailview('data/__tmp__/large')
+                    on_release: app.go_thumbnailview('data/__tmp__/test_images/花/daisy')
     
     
     ProgressBar:
@@ -113,4 +116,3 @@ BoxLayout:
         size_hint_y: None
         height: 10
         value: app.progress
-            
