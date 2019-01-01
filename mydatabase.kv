@@ -1,22 +1,7 @@
 #-*- coding: shift-jis -*-
-
-#:kivy 1.8.0
+#:kivy 1.10.1
 #:import KivyLexer kivy.extras.highlight.KivyLexer
 #:import Factory kivy.factory.Factory
-
-<ActionSpinnerOptions@SpinnerOption>
-    background_color: .4, .4, .4, 1
-
-<ActionSpinner@Spinner+ActionItem>
-    canvas.before:
-        Color:
-            rgba: 0.128, 0.128, 0.128, 1
-        Rectangle:
-            size: self.size
-            pos: self.pos
-    border: 27, 20, 12, 12
-    #background_normal: 'atlas://data/images/defaulttheme/action_group'
-    option_cls: Factory.ActionSpinnerOptions
 
 BoxLayout:
     orientation: 'vertical'
@@ -32,11 +17,13 @@ BoxLayout:
             source: 'data/background.png'
 
     ActionBar:
+        id: ab
         size_hint_y: None
         height: 40
         ActionView:
             id: av
             ActionPrevious:
+                id: av_prev
                 title: 'MyDataBase'
                 app_icon: 'data/icons/document.png'
                 app_icon_height: root.logo_size
@@ -46,11 +33,12 @@ BoxLayout:
                 previous_image_height: root.logo_size/2
                 previous_image_width: root.logo_size/2
                 on_release: app.go_previous_screen()
+                color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
 
-            ActionOverflow:
-                id: tmsize
+            ActionGroup:
+                id: av_tmsize
                 mode: 'spinner'
-                overflow_image: 'data/icons/thumbnail.png'
+                #overflow_image: 'data/icons/thumbnail.png'
                 ActionButton:
                     text: '極小アイコン'
                     on_press: app.view_size=0.5
@@ -65,28 +53,43 @@ BoxLayout:
                     on_press: app.view_size=4
 
             ActionToggleButton:
+                id: trash
                 text: 'ゴミ箱'
                 icon: 'data/icons/trash.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
                 group: 'select_mode'
                 on_release: app.change_mode('trash') if(self.state=='down') else app.change_mode('normal')
+                color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
 
             ActionToggleButton:
+                id: favorite
                 text: 'お気に入り'
                 icon: 'data/icons/star.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
                 group: 'select_mode'
                 on_release: app.change_mode('favorite') if(self.state=='down') else app.change_mode('normal')
+                color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
 
             ActionToggleButton:
+                id: chapter
                 text: 'しおり'
                 icon: 'data/icons/bookmark.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
                 group: 'select_mode'
                 on_release: app.change_mode('chapter') if(self.state=='down') else app.change_mode('normal')
+                color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
+
+            ActionButton:
+                id: filter
+                text: 'フィルタ'
+                icon: 'data/icons/filter.png'
+                icon_height: root.icon_size
+                icon_width: root.icon_size
+                on_release: app.open_filter_popup()
+                color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
 
     StackLayout:
         id: additional_option
@@ -110,9 +113,68 @@ BoxLayout:
                     text: 'load'
                     on_release: app.go_thumbnailview('data/__tmp__/test_images/花/daisy')
     
-    
     ProgressBar:
         id: pb
         size_hint_y: None
         height: 10
         value: app.progress
+
+
+<ThumbnailJump@Button>:
+    text: ''
+    font_size: 16
+    background_color: 0.6, 0.6, 0.6, 0.8
+    on_press: app.change_thumbnailview(self)
+
+<JumpPopUp@BoxLayout>:
+	orientation: 'vertical'
+    spacing: 10
+    
+    input_text: ''
+
+    AnchorLayout:
+        anchor_x:'center'
+        size_hint_y:None
+        height: 30
+        TextInput:
+            text: ''
+            hint_text:  '1 - {}'.format(app.divided_num)
+            on_text: root.input_text = self.text
+            multiline: False
+ 
+	BoxLayout:
+		orientation: 'horizontal'
+		Button:
+			size_hint: .5, 1
+			text: 'OK'
+			on_release: app.jump_thumbnail(root.input_text)
+ 
+		Button:
+			size_hint: .5, 1
+			text: 'キャンセル'
+			on_release: app.close_popup()
+
+<ClickableLabel@ButtonBehavior+Label>:
+    #text_size: self.size
+    size: self.texture_size
+    halign: 'left'
+    #valign: 'center'
+    font_size: '16sp'
+    #color: 0, 0, 0, 1
+
+<FilterItem@BoxLayout>:
+    text: ''
+    #size_hint: None, None
+    #size: 150, 50
+    size_hint: None, None
+    height: 40
+    width: self.minimum_width
+    CheckBox:
+        id: cb
+        #color: 0, 0.4, 1.0, 1.0
+        size_hint_x: None
+        width: '32dp'
+    ClickableLabel:
+        on_press: cb._do_press()
+        size_hint_x:None
+        text: root.text

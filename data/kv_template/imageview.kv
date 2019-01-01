@@ -1,15 +1,23 @@
+#-*- coding: shift-jis -*-
+#:kivy 1.10.1
+
 DataBaseScreen:
     name: 'ImageView'
     fullscreen: True
+
+    iv_full: False
 
     BoxLayout:
         orientation:'vertical'
 
         AnchorLayout:
             anchor_x:'center'
-            anchor_y:'center'
+            anchor_y: 'center'
+
+            #fullscreen: root.iv_full
+
             Image:
-                source: app.image_file
+                source: app.image_file_path
                 allow_stretch: True
                 #source: app.image_file[root.im_index]
             BoxLayout:
@@ -20,11 +28,11 @@ DataBaseScreen:
                     on_release: app.change_view_image('previous')
                 Button: 
                     size_hint_x: .5
-                    text : 'magnitude'
+                    text : ''
                     font_size: 48
                     color: 0,8,0,0.2
                     background_color: 0,0,0,0
-                    on_press: print('c')
+                    on_press: app.change_view_fullscreen()
                 Button: 
                     size_hint_x: .25
                     text : ''
@@ -32,6 +40,7 @@ DataBaseScreen:
                     on_release: app.change_view_image('next')
 
         BoxLayout:
+            id: iv_footer
             orientation:'vertical'
             size_hint_y: None
             height: 70
@@ -49,7 +58,8 @@ DataBaseScreen:
                 anchor_x: 'center'
                 anchor_y: 'bottom'
                 Label:
-                    text: app.image_file
+                    text: app.image_file_name
+                    color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
             
             AnchorLayout:
                 anchor_x: 'center'
@@ -65,6 +75,7 @@ DataBaseScreen:
                         nocache: True
                     Label:
                         text: '{0}/{1}'.format(app.image_idx+1, app.image_num)
+                        color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
                     ImageButton:
                         source: 'data/icons/go_next.png'
                         on_release: app.change_view_image('next')

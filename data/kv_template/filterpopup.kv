@@ -1,0 +1,43 @@
+#-*- coding: shift-jis -*-
+#:kivy 1.10.1
+
+BoxLayout:
+	orientation: 'vertical'
+    spacing: 10
+
+    Label:
+        size_hint_y:None
+        height: 40
+        valign: 'center'
+        text: '検索項目を選択してください'
+    
+    TabbedPanel:
+        id: tp
+        do_default_tab: False
+        
+    AnchorLayout:
+        anchor_x:'right'
+        size_hint_y: None
+        height: 40
+        
+        BoxLayout:
+            size_hint_x:None
+            width: 200
+            Label:
+                text: 'OR検索'
+            Switch:
+                id: enable_or
+ 
+	BoxLayout:
+		orientation: 'horizontal'
+        size_hint_y:None
+        height:40
+		Button:
+			size_hint: .5, 1
+			text: '適用'
+			on_release: app.adapt_filter(root.ids.tp, root.ids.enable_or.active)
+ 
+		Button:
+			size_hint: .5, 1
+			text: 'キャンセル'
+			on_release: app.close_popup()

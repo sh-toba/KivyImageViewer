@@ -1,3 +1,6 @@
+#-*- coding: shift-jis -*-
+#:kivy 1.10.1
+
 DataBaseScreen:
     name: 'ThumbnailView'
     fullscreen: True
@@ -47,37 +50,3 @@ DataBaseScreen:
                 anchor_y: 'top'
                 Label:
                     text: '{0}-{1} of {2}'.format(app.divided_slice[0]+1, app.divided_slice[1]+1, app.image_num)
-
-
-<ThumbnailJump@Button>:
-    text: ''
-    font_size: 16
-    background_color: 0.6, 0.6, 0.6, 0.8
-    on_press: app.reload_thumbnailview(self)
-
-<JumpPopUp@BoxLayout>:
-	orientation: 'vertical'
-    spacing: 10
-    
-    input_text: ''
-
-    AnchorLayout:
-        anchor_x:'center'
-        size_hint_y:None
-        height: 30
-        TextInput:
-            text: ''
-            hint_text:  '1 - {}'.format(app.divided_num)
-            on_text: root.input_text = self.text
- 
-	BoxLayout:
-		orientation: 'horizontal'
-		Button:
-			size_hint: .5, 1
-			text: 'OK'
-			on_release: app.jump_thumbnail(root.input_text)
- 
-		Button:
-			size_hint: .5, 1
-			text: 'ƒLƒƒƒ“ƒZƒ‹'
-			on_release: app.close_popup()
