@@ -1,0 +1,131 @@
+#-*- coding: shift-jis -*-
+#:kivy 1.10.1
+
+BoxLayout:
+	orientation: 'vertical'
+    spacing: 10
+
+    sp_values: []
+
+    before_title: '-'
+    updated:'-'
+    filenum:'-'
+    datasize:'-'
+
+    Label:
+        size_hint_y:None
+        height: 40
+        valign: 'center'
+        text: '登録内容の確認と編集ができます。'
+    
+    BoxLayout:
+        id: te_layout
+        orientation: 'vertical'
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            canvas.before:
+                Color:
+                    rgba: 0.0, 0.4, 0.8, 0.5
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+            Label:
+                text:'基本情報'
+                color: 0.6, 0.6, 0.6, 1
+        BoxLayout:
+            size_hint_y:None
+            height:40
+            Label:
+                text:'Title: '
+                size_hint_x: None
+                width: 100
+            TextInput:
+                id: title_input
+                text: ''
+                hint_text: 'タイトルを入力してください'
+                on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+            Label:
+                text: '頭文字'
+                size_hint_x:None
+                width: 60
+                halign: 'right'
+            Button:
+                id: ic_btn
+                size_hint_x: None
+                width: self.height
+                text: ''
+                on_press: app.select_initial(self)
+        BoxLayout:
+            size_hint_y:None
+            height:40
+            Label:
+                text:'Link: '
+                size_hint_x: None
+                width: 100
+            TextInput:
+                id: link_input
+                text: ''
+                hint_text: 'リンクするURLを入力してください'
+                on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+        BoxLayout:
+            size_hint_y:None
+            height:40
+            Label:
+                text:'登録日時: {}'.format(root.updated)
+            Label:
+                text:'ファイル数: {}'.format(root.filenum)
+            Label:
+                text:'サイズ: {}MB'.format(root.datasize)
+
+    BoxLayout:
+        size_hint_y:None
+        height: 40
+        spacing: 5
+        Spinner:
+            id: spn
+            values: root.sp_values
+            size_hint_x: None
+            width: 150
+        TextInput:
+            id: tag_input
+            text: ''
+            hint_text:  'タグ名を入力'
+            #size_hint: None,None
+            #height: 40
+            #width: 200 
+            on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r',''); root.input_text = self.text
+            #multiline: False
+            write_tab: False
+    
+        Label:
+            text: '頭文字'
+            size_hint_x:None
+            width: 80
+            halign: 'right'
+        Button:
+            id: ic_btn_tag
+            size_hint_x: None
+            width: self.height
+            #text: app.selected_char
+            text: ''
+            on_press: app.select_initial(self)
+        Button:
+            text: 'タグ登録'
+            size_hint_x: None
+            width: 100
+            on_release: app.add_tag_on_entry(spn.text, tag_input.text, ic_btn_tag.text); tag_input.text=''; ic_btn_tag.text=''
+ 
+	BoxLayout:
+		orientation: 'horizontal'
+        size_hint_y:None
+        height:40
+		Button:
+			size_hint: .5, 1
+			text: '変更保存'
+			on_release: app.change_entry_info(root)
+ 
+		Button:
+			size_hint: .5, 1
+			text: '戻る'
+			on_release: app.close_popup()

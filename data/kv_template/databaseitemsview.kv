@@ -1,0 +1,92 @@
+#-*- coding: shift-jis -*-
+#:kivy 1.10.1
+
+DataBaseScreen:
+    name: 'DataBaseItemsView'
+
+    BoxLayout:
+        orientation:'vertical'
+
+        padding: [0,15,0,0]
+
+        AnchorLayout:
+            id: header
+
+            anchor_x:'center'
+            anchor_y:'center'
+
+            padding: [10,0,10,10]
+
+            size_hint_y: None
+            height: 50
+        
+        ScrollView:
+            StackLayout:
+                id: dbitems
+
+                orientation: 'lr-tb'
+
+                padding: [10, 20, 10, 0]
+                spacing: 20
+                
+                size_hint_y: None
+                height: self.minimum_height
+
+                canvas.before:
+                    Color:
+                        rgba: 1, 1, 1, 1
+                    Rectangle:
+                        size: self.size
+                        pos: self.pos
+        
+        BoxLayout:
+            orientation:'vertical'
+            size_hint_y: None
+            height: 80
+            spacing: 0
+            padding: 10
+            canvas.before:
+                Color:
+                    rgba: 0.128, 0.128, 0.128, 1
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+
+            AnchorLayout:
+                id: footer
+                anchor_x: 'center'
+                anchor_y: 'bottom'
+
+                BoxLayout:
+                    size_hint_x: None
+                    width: 600
+                    spacing: 5
+                    padding: 0
+                    DBItemInitialChar:
+                        text: '‚ '
+                    DBItemInitialChar:
+                        text: '‚©'
+                    DBItemInitialChar:
+                        text: '‚³'
+                    DBItemInitialChar:
+                        text: '‚½'
+                    DBItemInitialChar:
+                        text: '‚È'
+                    DBItemInitialChar:
+                        text: '‚Í'
+                    DBItemInitialChar:
+                        text: '‚Ü'
+                    DBItemInitialChar:
+                        text: '‚â'
+                    DBItemInitialChar:
+                        text: '‚ç'
+                    DBItemInitialChar:
+                        text: '‚í'
+                    DBItemInitialChar:
+                        text: '‘¼'
+
+            AnchorLayout:
+                anchor_x: 'center'
+                anchor_y: 'top'
+                Label:
+                    text: 'ƒeƒXƒg'
