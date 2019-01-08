@@ -1,0 +1,76 @@
+#-*- coding: shift-jis -*-
+#:kivy 1.10.1
+
+BoxLayout:
+	orientation: 'vertical'
+    input_text: ''
+
+    Label:
+        size_hint_y:None
+        height: 40
+        valign: 'center'
+        text: 'タグの追加や削除ができます'
+    
+    TabbedPanel:
+        id: tp
+        do_default_tab: False
+    
+    AnchorLayout:
+        anchor_x:'center'
+        size_hint_y:None
+        height: 60
+        BoxLayout:
+            #size_hint_x: None
+            #width: 600
+            spacing: 20
+            padding: [5,10,5,10]
+            BoxLayout:
+                Label:
+                    text: '新規タグ'
+                    size_hint_x:None
+                    width: 60
+                    halign: 'right'
+                TextInput:
+                    id: tag_input
+                    text: ''
+                    hint_text:  'タグ名を入力'
+                    #size_hint: None,None
+                    #height: 40
+                    #width: 200 
+                    on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r',''); root.input_text = self.text
+                    #multiline: False
+                    write_tab: False
+            BoxLayout:
+                spacing: 10
+                Label:
+                    text: '頭文字'
+                    size_hint_x:None
+                    width: 40
+                    halign: 'right'
+                Button:
+                    id: ic_btn
+                    size_hint_x: None
+                    width: self.height
+                    #text: app.selected_char
+                    text: ''
+                    on_press: app.select_initial(self)
+                Button:
+                    text: '登録'
+                    size_hint_x: None
+                    width: 60
+                    on_release: app.add_tag(root.ids.tp, root.input_text, root.ids.ic_btn.text); tag_input.text=''; ic_btn.text=''
+                Button:
+                    text: '変更'
+                    size_hint_x: None
+                    width: 60
+                    on_release: app.change_tag(root.ids.tp); tag_input.text=''; ic_btn.text=''
+                Button:
+                    text: '削除'
+                    size_hint_x: None
+                    width: 60
+                    on_release: app.delete_tag(root.ids.tp); tag_input.text=''; ic_btn.text=''
+            Button:
+                text: '戻る'
+                size_hint_x: None
+                width: 60
+                on_release: app.close_popup()
