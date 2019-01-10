@@ -4,6 +4,7 @@
 BoxLayout:
 	orientation: 'vertical'
     input_text: ''
+    im_source: 'data/noimage.png'
 
     Label:
         size_hint_y:None
@@ -15,62 +16,102 @@ BoxLayout:
         id: tp
         do_default_tab: False
     
-    AnchorLayout:
-        anchor_x:'center'
-        size_hint_y:None
-        height: 60
-        BoxLayout:
-            #size_hint_x: None
-            #width: 600
-            spacing: 20
-            padding: [5,10,5,10]
+    BoxLayout:
+        size_hint_y: None
+        height: 180
+        #width: 600
+        spacing: 10
+        padding: [5,0,5,0]
+        AnchorLayout:
+            anchor_x:'center'
+            anchor_y:'center'
+            size_hint_x:.6
             BoxLayout:
-                Label:
-                    text: '新規タグ'
-                    size_hint_x:None
-                    width: 60
-                    halign: 'right'
-                TextInput:
-                    id: tag_input
-                    text: ''
-                    hint_text:  'タグ名を入力'
-                    #size_hint: None,None
-                    #height: 40
-                    #width: 200 
-                    on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r',''); root.input_text = self.text
-                    #multiline: False
-                    write_tab: False
+                orientation: 'vertical'
+                spacing: 5
+                size_hint_y: None
+                height: self.minimum_height
+                BoxLayout:
+                    size_hint_y: None
+                    height: 40
+                    Label:
+                        text: 'Name: '
+                        size_hint_x:None
+                        width: 60
+                    TextInput:
+                        id: tag_input
+                        text: ''
+                        hint_text:  'タグ名を入力'
+                        #size_hint: None,None
+                        #height: 40
+                        #width: 200 
+                        on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r',''); root.input_text = self.text
+                        #multiline: False
+                        write_tab: False
+                    Label:
+                        text: '頭文字'
+                        size_hint_x:None
+                        width: 60
+                    Button:
+                        id: ic_btn
+                        size_hint_x: None
+                        width: self.height
+                        #text: app.selected_char
+                        text: ''
+                        on_press: app.select_initial(self)
+                BoxLayout:
+                    size_hint_y:None
+                    height:60
+                    Label:
+                        text:'Link: '
+                        size_hint_x: None
+                        width: 60
+                    TextInput:
+                        id: link_input
+                        text: ''
+                        hint_text: 'リンクするURLを入力してください'
+                        on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+                BoxLayout:
+                    spacing: 10
+                    size_hint_y: None
+                    height: 40
+                    Button:
+                        text: '登録'
+                        #size_hint_x: None
+                        #width: 60
+                        #on_release: app.add_tag(root.ids.tp, root.input_text, ic_btn.text, link_input.text); tag_input.text=''; ic_btn.text=''; link_input.text=''
+                        on_release: app.add_tag(tp, tag_input, ic_btn, link_input)
+                    Button:
+                        text: '変更'
+                        #size_hint_x: None
+                        #width: 60
+                        on_release: app.change_tag(root.ids.tp)
+                    Button:
+                        text: '削除'
+                        #size_hint_x: None
+                        #width: 60
+                        on_release: app.delete_tag(root.ids.tp)
+        Image:
+            id: tag_image
+            size_hint_x: .3
+            source:root.im_source
+            nocache: True
+
+        AnchorLayout:
+            anchor_x:'center'
+            anchor_y:'center'
+            size_hint_x: .1
             BoxLayout:
-                spacing: 10
-                Label:
-                    text: '頭文字'
-                    size_hint_x:None
-                    width: 40
-                    halign: 'right'
+                orientation:'vertical'
+                padding: [0, 10, 0, 10]
+                spacing: 20
                 Button:
-                    id: ic_btn
-                    size_hint_x: None
-                    width: self.height
-                    #text: app.selected_char
-                    text: ''
-                    on_press: app.select_initial(self)
+                    text: '解除'
+                    #size_hint_y: .5
+                    #width: 60
+                    on_release: app.exclude_tag_image()
                 Button:
-                    text: '登録'
-                    size_hint_x: None
-                    width: 60
-                    on_release: app.add_tag(root.ids.tp, root.input_text, root.ids.ic_btn.text); tag_input.text=''; ic_btn.text=''
-                Button:
-                    text: '変更'
-                    size_hint_x: None
-                    width: 60
-                    on_release: app.change_tag(root.ids.tp); tag_input.text=''; ic_btn.text=''
-                Button:
-                    text: '削除'
-                    size_hint_x: None
-                    width: 60
-                    on_release: app.delete_tag(root.ids.tp); tag_input.text=''; ic_btn.text=''
-            Button:
-                text: '戻る'
-                size_hint_x: None
-                width: 60
-                on_release: app.close_popup()
+                    text: '戻る'
+                    #size_hint_y: .5
+                    #width: 60
+                    on_release: app.close_popup()

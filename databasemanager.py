@@ -16,6 +16,7 @@ class DataBaseManager():
 
     DATABASE_NAME = 'database.sqlite'
     DATA_DIR = 'data'
+    TAG_IMAGE_DIR = 'tag_image'
 
     SUPPORTED_EXT = ["jpg", "jpeg", "png", "bmp", "gif", "zip"]
 
@@ -25,6 +26,7 @@ class DataBaseManager():
         'Updated': 'datetime',
         'FileNum': 'Integer',
         'Size': 'Real',
+        'Link':'text',
         'IsFavorite': 'Integer',
         'favorite': 'text',
         'chapter': 'text'
@@ -33,11 +35,15 @@ class DataBaseManager():
     TEMPLATE_TAGS_COLUMN = {
         'Name': 'text primary key',
         'InitialCharacter': 'text',
-        'IsFavorite': 'Integer'
+        'IsFavorite': 'Integer',
+        'Link': 'text',
+        'Image': 'text'
     }
 
     db_root = ''
     data_dir = ''
+    tag_dir = ''
+
     record_num = 0
 
     # ファイル複製スレッド
@@ -82,6 +88,7 @@ class DataBaseManager():
 
         self.db_root = db_root
         self.data_dir = os.path.join(self.db_root, self.DATA_DIR)
+        self.tag_dir = os.path.join(self.db_root, self.TAG_IMAGE_DIR)
 
         self.logger.debug('open database')
 
@@ -110,9 +117,14 @@ class DataBaseManager():
         self.db_root = db_root
         self.connection = sqlite3.connect(db_path, detect_types = sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
         self.cursor = self.connection.cursor()
+        
         self.data_dir = os.path.join(self.db_root, self.DATA_DIR)
         if not os.path.exists(self.data_dir):
             os.mkdir(self.data_dir)
+        
+        self.tag_dir = os.path.join(self.db_root, self.TAG_IMAGE_DIR)
+        if not os.path.exists(self.tag_dir):
+            os.mkdir(self.tag_dir)
 
         # Mainテーブルを作成する。
         table_name = 'MainTable'
@@ -204,6 +216,8 @@ class DataBaseManager():
             # レコードを作成する
             try:
                 values_dict['Title'] = title
+                values_dict['FileNum'] = 0
+                values_dict['Size'] = 0.0
                 sql_tmp, sql_values = self._convert_dict4sql(values_dict)
                 sql = 'insert into MainTable {}'.format(sql_tmp)
                 self.logger.debug('{} {}'.format(sql, sql_values))
@@ -217,11 +231,33 @@ class DataBaseManager():
                 'title':title,
                 'src_list':file_list,
                 'dst_path':os.path.join(self.data_dir, title),
+                'init_num':0,
+                'init_size':0.0
                 })
 
         self.connection.commit()
 
         return err_info
+
+    def add_files(self, title, file_list):
+
+        if len(file_list) == 0:
+            return False
+
+        self.copy_tasks = []
+
+        init_info = self.get_items(['FileNum','Size'], title=title)
+
+        # ファイルコピーのタスクを作成する
+        self.copy_tasks.append({
+            'title':title,
+            'src_list':sorted(file_list),
+            'dst_path':os.path.join(self.data_dir, title),
+            'init_num':init_info[0][0],
+            'init_size':init_info[0][1]
+            })
+        
+        return True
 
     def start_copy(self, move_file=False):
         """
@@ -342,33 +378,31 @@ class DataBaseManager():
                 os.mkdir(dst_path)
             file_list = ctask['src_list']
 
+            values_dict['FileNum'] = ctask['init_num']
+            values_dict['Size'] = ctask['init_size']
+            idx_offset = ctask['init_num']
+
             self.copy_progress['title'] = title
             self.copy_progress['file_num'] = len(file_list)
             self.copy_progress['copied_file'] = 0
 
-            # ファイルコピー - ついでに容量も計算
-            values_dict['Size'] = 0
-            values_dict['FileNum'] = 0
             for i, file_path in enumerate(file_list):
                  
                 _, ext = os.path.splitext(file_path)
                 #print(type(ext), ext)
 
+                new_name = str(i + idx_offset).zfill(5)
+                new_path = os.path.join(dst_path, new_name)
+
                 if ext == '.gif':
-                    
                     thum_dir = os.path.join(dst_path, '__thumbnail__')
                     if not os.path.exists(thum_dir):
                         os.mkdir(thum_dir)
-
-                    new_name = str(i).zfill(5)
-                    new_path = os.path.join(dst_path, new_name)
                     self._gif_to_zip(file_path, new_path, thum_dir)
                     values_dict['Size'] += os.path.getsize(new_path + '.zip')
                 else:
-                    new_name = '{0}{1}'.format(str(i).zfill(5), ext)
-                    new_path = os.path.join(dst_path, new_name)
-
                     # TODO: 上書き操作は仮で禁止にしている
+                    new_path = new_path + ext
                     if not os.path.exists(new_path):
                         if move_file:
                             shutil.move(file_path, new_path)
@@ -518,26 +552,40 @@ class DataBaseManager():
             return ret.fetchall()
     """
 
-    def add_tag(self, tag, values):
+    def add_tag(self, table, values):
         """
         新規タグを追加する
-            tagはMainTable内に存在するタグ名
+            tagはMainTable内に存在するタグ種別名
             valuesは追加するタグ内容のリスト[Name, InitialCharacter]
         Nameが重複した場合はFalseリターン
         """
+        if self.tag_is_exist(table, values[0]):
+            return False
+
         try:
-            sql = 'insert into {}(Name, InitialCharacter) VALUES(?,?)'.format(tag)
-            self.logger.debug('{} {}'.format(sql, values))
-            self.cursor.execute(sql, values)
+            if values[3] == '':
+                tmp_tuple = (values[0], values[1], values[2], '')
+            else:
+                im_ext = self._asign_tag_image(table, values[3], values[0])
+                tmp_tuple = (values[0], values[1], values[2], im_ext)
+
+            sql = 'insert into {}(Name, InitialCharacter, Link, Image) VALUES(?,?,?,?)'.format(table)
+            self.logger.debug('{} {}'.format(sql, tmp_tuple))
+            self.cursor.execute(sql, tmp_tuple)
             self.connection.commit()
+
             return True
         except:
             return False
 
-    def update_tag(self, tag_table, tag_name, values_dict):
+    def update_tag(self, table, tag_name, values_dict):
         """
         タグの情報を変更する。
         """
+        if 'Name' in values_dict.keys():
+            if self.tag_is_exist(table, values_dict['Name']):
+                return False
+
         data_list = []
 
         for key, value in values_dict.items():
@@ -546,10 +594,25 @@ class DataBaseManager():
                 tmp_val = LIST_DELIMITER.join([str(i) for i in value])
             else:
                 tmp_val = value
+
+            if key == 'Image':
+                # valueが空欄の場合は削除指令
+                
+                im_path = self.get_tag_image(table,tag_name)
+                try:
+                    os.remove(im_path)
+                except:
+                    self.logger.debug('Failed to remove file. {}'.format(im_path))
+                finally:
+                    if value == '':
+                        tmp_val = ''
+                    else:
+                        tmp_val = self._asign_tag_image(table, value, tag_name)
+
             data_list.append('{0}="{1}"'.format(key,tmp_val))
 
         sql_set_data = ','.join(data_list)
-        sql = 'UPDATE {0} SET {1} WHERE Name="{2}"'.format(tag_table, sql_set_data, tag_name)
+        sql = 'UPDATE {0} SET {1} WHERE Name="{2}"'.format(table, sql_set_data, tag_name)
 
         try:
             self.logger.debug(sql)
@@ -564,7 +627,9 @@ class DataBaseManager():
             new_name = values_dict['Name']
             update_list = [] # tuple(Title, NewList)
 
-            sql = 'SELECT Title,{} FROM MainTable'.format(tag_table)
+            self._update_tag_image(table, old_name, new_name)
+
+            sql = 'SELECT Title,{} FROM MainTable'.format(table)
             ret = self.cursor.execute(sql)
 
             for row in ret.fetchall():
@@ -572,20 +637,81 @@ class DataBaseManager():
                 tag_list = self._convert_list(row[1])
                 if old_name in tag_list:
                     new_list = [new_name if t == old_name else t for t in tag_list]
-                    update_list.append((title,{tag_table:copy.deepcopy(new_list)}))
+                    update_list.append((title,{table:copy.deepcopy(new_list)}))
             
             for ul in update_list:
                 self.update_record(title=ul[0],values_dict=ul[1])
 
         return True
 
-    def delete_tags(self, tag, names):
+    def delete_tags(self, table, names):
         for name in names:
-            sql = 'DELETE FROM {} WHERE Name="{}"'.format(tag, name)
+            sql = 'DELETE FROM {} WHERE Name="{}"'.format(table, name)
+
+            im_path = self.get_tag_image(table, name)
+            if im_path != '':
+                try:
+                    os.remove(im_path)
+                except:
+                    self.logger.debug('Failed to remove file. {}'.format(im_path))
+
             self.logger.debug(sql)
             self.cursor.execute(sql)
+
         self.connection.commit()
         return
+
+    def tag_is_exist(self, table, name):
+        sql = 'SELECT COUNT(*) FROM {} WHERE Name="{}"'.format(table, name)
+        self.cursor.execute(sql)
+        result = self.cursor.fetchall()
+        return result[0][0] != 0
+
+    def get_tag_image(self, table, name):
+        sql = 'SELECT Image FROM {} WHERE Name="{}"'.format(table, name)
+        self.cursor.execute(sql)
+        result = self.cursor.fetchall()
+        if result[0][0] == '':
+            return ''
+        else:
+            im_name = '{}{}'.format(name, result[0][0])
+            return os.path.join(self.tag_dir, table, im_name)
+
+
+    def _asign_tag_image(self, table, src_path, tag_name):
+
+        tmp_path = os.path.join(self.tag_dir, table)
+        if not os.path.exists(tmp_path):
+            os.mkdir(tmp_path)
+
+        _, ext = os.path.splitext(src_path)
+        new_name = '{}{}'.format(tag_name, ext)
+
+        try:
+            shutil.copyfile(src_path, os.path.join(tmp_path, new_name))
+        except:
+            self.logger.debug('Failed to copy file. {}'.format(src_path))
+
+        return ext
+
+    def _update_tag_image(self, table, old_name, new_name):
+
+        sql = 'SELECT Image FROM {} WHERE Name="{}"'.format(table, new_name)
+        self.cursor.execute(sql)
+        result = self.cursor.fetchall()
+        if result[0][0] == '':
+            return
+
+        ext = result[0][0]
+
+        old_im_path = os.path.join(self.tag_dir, table, '{}{}'.format(old_name, ext))
+        new_im_path = os.path.join(self.tag_dir, table, '{}{}'.format(new_name, ext))
+
+        try:
+            os.rename(old_im_path, new_im_path)
+        except:
+            self.logger.debug('Failed to change name. {} -> {}'.format(old_im_path, new_im_path))
+
 
     def get_tag_list(self, tag):
         sql = 'SELECT * FROM {}'.format(tag)
@@ -618,7 +744,6 @@ class DataBaseManager():
 
         return tag_info
         
-    
     def get_tag_items(self, table, col_name, name=None, convert=False):
         """
         get_itemのタグ用のテーブル版
