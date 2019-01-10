@@ -1,7 +1,7 @@
 #-*- coding: utf-8 -*-
 import os, sys, logging
 
-import pathlib, glob, time, math, threading, json, copy
+import pathlib, glob, time, math, threading, json, copy, webbrowser
 from functools import partial
 import numpy as np
 from itertools import chain
@@ -113,6 +113,8 @@ class MyDataBaseApp(App):
     #sh.setFormatter(formatter)
     
     curdir = os.path.dirname(__file__)
+
+    NO_IMAGE = StringProperty()
     
     max_thumnail = 50 # 配置する最大サムネイル数
     max_jump_button = 9 # 配置するジャンプボタン数
@@ -152,6 +154,7 @@ class MyDataBaseApp(App):
     loading_thumbnail = False
     load_cancel = False
 
+    popup_mode = 'close'
     op_is_active = False
     task_remain = False
     entry_count = 0
@@ -205,6 +208,8 @@ class MyDataBaseApp(App):
 
         self.title = 'MyDataBase'
         self.view_size = 1
+
+        self.NO_IMAGE = 'data/noimage.png'
 
         Window.bind(on_dropfile = self._on_drop_files)
 
@@ -260,12 +265,19 @@ class MyDataBaseApp(App):
 
     def close_popup(self):
         self.popup.dismiss()
+        self.popup_mode = 'close'
 
     def close_confirm_popup(self):
         
         if self.task_remain:
             self.dbm.resolve_sql_tasks()
             self.reload_db_items()
+
+            sm = self.root.ids.sm
+            if sm.current is 'ThumbnailView':
+                self.reload_data()
+                self.reload_thumbnailview()
+            
             self.task_remain = False
         
         self.c_popup.dismiss()
@@ -308,9 +320,19 @@ class MyDataBaseApp(App):
             elif mode == 'tag':
                 height = 40
                 option_layout.clear_widgets()
+
                 tmp_button = Button(text='タグ登録',size_hint_x=None,width=80, background_color=[0.128, 0.128, 0.128, 1])
                 tmp_button.bind(on_release=self.open_tag_setting)
                 option_layout.add_widget(tmp_button)
+
+                tmp_button2 = Button(text='CSV出力',size_hint_x=None,width=90, background_color=[0.128, 0.128, 0.128, 1])
+                #tmp_button2.bind(on_release=self.open_tag_setting)
+                option_layout.add_widget(tmp_button2)
+
+                tmp_button3 = Button(text='CSV読込み',size_hint_x=None,width=100, background_color=[0.128, 0.128, 0.128, 1])
+                #tmp_button3.bind(on_release=self.open_tag_setting)
+                option_layout.add_widget(tmp_button3)
+
             elif mode == 'favorite':
                 height = 40
                 option_layout.clear_widgets()
@@ -424,6 +446,8 @@ class MyDataBaseApp(App):
             filter_items.ids.fi.add_widget(FilterItem(text='チャプター'))
             th.content = filter_items
             tp.add_widget(th)
+
+        self.popup_mode = 'filter'
             
         self.popup = Popup(title='フィルタ', content=content, size_hint=(None, None), size=(800, 600), auto_dismiss=True)
         self.popup.open()
@@ -476,17 +500,39 @@ class MyDataBaseApp(App):
         self.reload_db_items()
 
     def _on_drop_files(self, window, file_path):
+
+        path = file_path.decode('utf-8')
         
         # ドロップしたスクリーン別に操作を変える
         sm = self.root.ids.sm
         if sm.current is 'DataBaseItemsView':
-            path = file_path.decode('utf-8')
-
-            if not self.op_is_active:
+            if self.popup_mode == 'close':
                 self.open_entry_popup()
 
-            self.entry_count += 1            
-            self.add_new_entry(path)
+            if self.popup_mode == 'data_entry':
+                if os.path.isdir(path):
+                    self.entry_count += 1            
+                    self.add_new_entry(path)
+            
+            elif self.popup_mode == 'tag_setting':
+                _, ext = os.path.splitext(path)
+                if ext in [".jpg", ".jpeg", ".png", ".bmp"]:
+                    self.popup.content.im_source = path
+        
+        if sm.current is 'ThumbnailView':
+            if self.popup_mode == 'close':
+                self.open_file_entry_popup()
+
+            if self.popup_mode == 'file_entry':
+                if os.path.isdir(path):
+                    file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(path, "*." + ext)) for ext in self.dbm.SUPPORTED_EXT])))
+                    for fl in file_list:
+                        self.add_file_entry(fl)
+                elif os.path.isfile(path):
+                    _, ext = os.path.splitext(path)
+                    if ext in ['.'+e for e in self.dbm.SUPPORTED_EXT]:
+                        self.add_file_entry(path)
+
         return
 
 
@@ -557,6 +603,12 @@ class MyDataBaseApp(App):
 
             elif self.item_select_mode is 'tag':
                 self.open_tag_edit(instance.title)
+
+            elif self.item_select_mode is 'link':
+                url = self.dbm.get_items('Link', title=instance.title, convert=True)
+                if not url[0] is None:
+                    if not url[0] == '':
+                        webbrowser.open(url[0])
         else:
             if self.item_select_mode is 'normal':
                 self.db_filter['options'] = {self.db_view_mode:[instance.title]}
@@ -566,6 +618,12 @@ class MyDataBaseApp(App):
             elif self.item_select_mode is 'favorite':
                 instance.is_favorite ^= True
                 self.dbm.update_tag(self.db_view_mode, instance.title, values_dict={'IsFavorite':int(instance.is_favorite)})
+
+            elif self.item_select_mode is 'link':
+                url = self.dbm.get_tag_items(self.db_view_mode, 'Link', instance.title, convert=True)
+                if not url[0] is None:
+                    if not url[0] == '':
+                        webbrowser.open(url[0])
 
     def reload_db_header(self, filt_on=False):
         # ビューの設定
@@ -604,7 +662,6 @@ class MyDataBaseApp(App):
 
             a_layout_l.add_widget(b_layout)
             screen.ids.header.add_widget(a_layout_l)
-
 
     def reload_db_items(self):
 
@@ -679,12 +736,7 @@ class MyDataBaseApp(App):
         # 削除
         self.dbm.delete_record(self.del_title)
 
-        # ポップアップを出す
-        content = Label(text='しばらくお待ちください。', font_size=16)
-        self.p_popup = Popup(title="データ削除中", content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=False)
-        self.p_popup.open()
-
-        Clock.schedule_interval(partial(self._file_op_progress, 'delete'), 0.2)
+        self._open_progress('delete')
 
 
     # タグ操作
@@ -706,7 +758,6 @@ class MyDataBaseApp(App):
             tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
         #print(tag_list)
 
-        # FilterItemの構成を流用
         for key, val_list in sorted(tag_list.items(), key=lambda x:x[0]):
             #tp_item = TabbedPanelItem(text=key)
             th = TabbedPanelHeader(text=key)
@@ -721,33 +772,63 @@ class MyDataBaseApp(App):
             
         self.popup = Popup(title='タグ編集', content=content, size_hint=(None, None), size=(900, 760), auto_dismiss=False)
         self.popup.open()
+
+        self.popup_mode = 'tag_setting'
     
     def reflect_tag(self, tag_item, is_active):
 
         content = self.popup.content
         if is_active:
             table = content.ids.tp.current_tab.text
-            content.ids.tag_input.text = tag_item.text
-            res = self.dbm.get_tag_items(table, 'InitialCharacter', name=tag_item.text, convert=True)
-            content.ids.ic_btn.text = res[0]
-        else:
-            content.ids.tag_input.text = ''
-            content.ids.ic_btn.text = ''
+            tag_name = tag_item.text
 
-    def add_tag(self, tp, tag_name, initial_char):
-        if (tag_name is '') | (initial_char is '') :
+            content.ids.tag_input.text = tag_name
+
+            res = self.dbm.get_tag_items(table, ['InitialCharacter','Link'], name=tag_name, convert=False)
+            content.ids.ic_btn.text = res[0][0]
+            content.ids.link_input.text = res[0][1] if not res[0][1] is None else ''
+
+            im_path = self.dbm.get_tag_image(table, tag_name)
+            if im_path == '':
+                content.im_source = self.NO_IMAGE
+            else:
+                content.im_source = im_path
+        else:
+            self._clear_tag_info()
+
+    def add_tag(self, tp, input_tag, ic_btn, link_input):
+        
+        table = tp.current_tab.text
+        tn = input_tag.text
+        ic = ic_btn.text
+        li = link_input.text
+
+        if table=='Default tab':
             return
 
-        if self.dbm.add_tag(tp.current_tab.text, (tag_name,initial_char)):
+        if (tn == '') | (ic == '') :
+            return
+
+        if self.popup.content.im_source == self.NO_IMAGE:
+            tim = ''
+        else:
+            tim = self.popup.content.im_source
+
+        if self.dbm.add_tag(table, (tn,ic, li,tim)):
             #tp.current_tab.content.ids.fi.add_widget(FilterItem(text=tag_name))
-            tp.current_tab.content.ids.fi.add_widget(TagEditItem(text=tag_name))
+            tp.current_tab.content.ids.fi.add_widget(TagEditItem(text=tn))
+            self._clear_tag_info()
+        else:
+            c_content = SimplePopUp(text='同名のタグがあります', close=self.close_confirm_popup)
+            self.c_popup = Popup(title="警告", content=c_content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+            self.c_popup.open()
 
     def add_tag_on_entry(self, table, tag_name, initial_char):
 
         if (table == '') | (tag_name == '') | (initial_char == '') :
             return
 
-        if self.dbm.add_tag(table, (tag_name,initial_char)):
+        if self.dbm.add_tag(table, (tag_name,initial_char, '', '')):
             tag_list = sorted([''] + self.dbm.get_tag_items(table, 'Name', convert=True))
             for th in self.popup.content.ids.tp.tab_list:
                 for child in th.content.children:
@@ -758,6 +839,10 @@ class MyDataBaseApp(App):
                                 if ch.__class__.__name__ is 'GridLayout':
                                     for c in ch.children:
                                         c.values = tag_list
+        else:
+            c_content = SimplePopUp(text='同名のタグがあります', close=self.close_confirm_popup)
+            self.c_popup = Popup(title="警告", content=c_content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+            self.c_popup.open()
 
     def change_tag(self, tp):
 
@@ -766,7 +851,9 @@ class MyDataBaseApp(App):
         table = content.ids.tp.current_tab.text
         new_name = content.ids.tag_input.text
         ic_text = content.ids.ic_btn.text
+        link_str = content.ids.link_input.text
         
+        # 選択中の要素を取得する
         select_child = None
         old_name = ''
         tag_layout = tp.current_tab.content.ids.fi
@@ -775,33 +862,49 @@ class MyDataBaseApp(App):
                 select_child = child
                 old_name = child.text
                 break
-
-        if old_name == '':
+        if old_name == '': # なければ空欄のままなのでreturn
             return
 
         values_dict = {}
         values_dict['InitialCharacter'] = ic_text
+        values_dict['Link'] = link_str
+
+        old_im_path = self.dbm.get_tag_image(table, old_name)
+        if old_im_path == '':
+            old_im_path = self.NO_IMAGE
+
+        if self.popup.content.im_source != old_im_path:
+            new_im_path = '' if self.popup.content.im_source==self.NO_IMAGE else self.popup.content.im_source
+            values_dict['Image'] = new_im_path
+
         if old_name != new_name:
             values_dict['Name'] = new_name
+            self.popup.content.im_source = self.NO_IMAGE
+
+        self._clear_tag_info()
 
         if self.dbm.update_tag(table, old_name, values_dict):
             select_child.text = new_name
+        else:
+            c_content = SimplePopUp(text='同名のタグがあります', close=self.close_confirm_popup)
+            self.c_popup = Popup(title="警告", content=c_content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+            self.c_popup.open()
 
         return
 
     def delete_tag(self, tp):
 
+        self._clear_tag_info()
+
         tag_layout = tp.current_tab.content.ids.fi
 
         del_child = None
         del_name = ''
-
         for child in tag_layout.children:
             if child.ids.cb.active:
                 del_child = child
                 del_name = child.text
                 break
-
         if del_name == '':
             return
 
@@ -811,19 +914,31 @@ class MyDataBaseApp(App):
 
         return
 
+    def exclude_tag_image(self):
+        self.popup.content.im_source = self.NO_IMAGE
+
+    def _clear_tag_info(self):
+        content = self.popup.content
+        content.ids.tag_input.text = ''
+        content.ids.ic_btn.text = ''
+        content.ids.link_input.text = ''
+        content.im_source = self.NO_IMAGE
+
+
     def open_tag_edit(self, title):
 
         content = self._load_template('TagEdit')
         content.sp_values = sorted(list(self.db_tags.keys()))
 
         # テンプレート情報の読み取り
-        col_name = ['Title', 'InitialCharacter', 'Updated', 'FileNum', 'Size']
+        col_name = ['Title', 'InitialCharacter', 'Updated', 'FileNum', 'Size', 'Link']
         tmp_info = self.dbm.get_items(col_name=col_name, title=title, convert=False)
         #for ti in tmp_info[0]:
             #print(type(ti), ti)
 
         content.ids.title_input.text = tmp_info[0][0]
         content.ids.ic_btn.text = tmp_info[0][1]
+        content.ids.link_input.text = tmp_info[0][5]
 
         content.before_title = tmp_info[0][0]
         content.updated = tmp_info[0][2].strftime('%Y-%m-%d %H:%M:%S')
@@ -879,6 +994,7 @@ class MyDataBaseApp(App):
                 values_dict['Title'] = new_title
 
         values_dict['InitialCharacter'] = instance.ids.ic_btn.text
+        values_dict['Link'] = instance.ids.link_input.text
 
         #TODO: 「クラス名で必要な情報を取得する」というゴリ押しを何とかしたい。
         for child in instance.ids.te_layout.children:
@@ -905,6 +1021,8 @@ class MyDataBaseApp(App):
 
     # データ登録ポップアップでのイベント
     def open_entry_popup(self):
+        self.popup_mode = 'data_entry'
+
         content = self._load_template('DataEntry')
         content.sp_values = sorted(list(self.db_tags.keys()))
         self.popup = Popup(title='データ登録', content=content, size_hint=(None, None), size=(900, 760), auto_dismiss=False)
@@ -912,7 +1030,7 @@ class MyDataBaseApp(App):
         self.op_is_active = True
 
     def close_entry_popup(self):
-        self.popup.dismiss()
+        self.close_popup()
         self.op_is_active = False
         self.entry_count = 0
         self.error_entry = []
@@ -970,6 +1088,7 @@ class MyDataBaseApp(App):
             path = th.content.ids.path_input.text
             title = th.content.ids.title_input.text
             ichar = th.content.ids.ic_btn.text
+            link_str = th.content.ids.link_input.text
 
             if (path is '') | (title is '') | (ichar is ''):
                 except_msg.append('{} : 未入力の必須項目があります'.format(th.text))
@@ -980,6 +1099,7 @@ class MyDataBaseApp(App):
                 continue
             
             values_dict['InitialCharacter'] = ichar
+            values_dict['Link'] = link_str
 
             #TODO: 「クラス名で必要な情報を取得する」というゴリ押しを何とかしたい。
             for child in th.content.children:
@@ -1025,14 +1145,8 @@ class MyDataBaseApp(App):
         self.error_entry = self.dbm.insert_records(self.reserved_entry)
 
         if len(self.error_entry) != len(self.reserved_entry):
-            
-            content = ProgressPopUp()
-            self.p_popup = Popup(title="コピー進捗", content=content, size_hint=(None, None), size=(300, 200), auto_dismiss=False)
-            self.p_popup.open()
-            
             self.dbm.start_copy()
-
-            Clock.schedule_interval(partial(self._file_op_progress, 'copy'), 0.1)
+            self._open_progress('copy')
 
         return
 
@@ -1040,6 +1154,18 @@ class MyDataBaseApp(App):
         self.reserved_entry = []
         self.close_confirm_popup()
         return
+
+
+    def _open_progress(self, p_type):
+        if p_type == 'copy':
+            content = ProgressPopUp()
+            self.p_popup = Popup(title="コピー進捗", content=content, size_hint=(None, None), size=(600, 200), auto_dismiss=False)
+        elif p_type == 'delete':
+            content = Label(text='しばらくお待ちください。', font_size=16)
+            self.p_popup = Popup(title="データ削除中", content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=False)
+
+        self.p_popup.open()
+        Clock.schedule_interval(partial(self._file_op_progress, p_type), 0.1)
 
     def _file_op_progress(self, mode, *largs):
 
@@ -1088,6 +1214,27 @@ class MyDataBaseApp(App):
     # ThumbnailViewイベント
     def go_thumbnailview(self):
         
+        self.reload_data()
+        
+        """
+        # テスト用
+        for opt_key in self.image_option.keys():
+            for i in range(self.image_num):
+                if opt_key is 'favorite':
+                    self.image_option[opt_key][i] = ((i % 10) == 0)
+                elif opt_key is 'chapter':
+                    self.image_option[opt_key][i] = ((i % 23) == 0)
+        """
+
+        self.screen_title = 'サムネイルビュー'
+        sm = self.root.ids.sm
+        sm.transition = SlideTransition(direction='left', duration=self.animation_speed)
+        sm.current = 'ThumbnailView'
+
+        self.reload_thumbnailview()
+
+    def reload_data(self):
+
         self.image_dir, self.image_list = self.dbm.get_image_list(self.data_title)
         self.image_num = len(self.image_list)
 
@@ -1117,22 +1264,6 @@ class MyDataBaseApp(App):
                 for ov in opt_val:
                     self.image_option[opt_key][int(ov)] = True
 
-        """
-        # テスト用
-        for opt_key in self.image_option.keys():
-            for i in range(self.image_num):
-                if opt_key is 'favorite':
-                    self.image_option[opt_key][i] = ((i % 10) == 0)
-                elif opt_key is 'chapter':
-                    self.image_option[opt_key][i] = ((i % 23) == 0)
-        """
-
-        self.screen_title = 'サムネイルビュー'
-        sm = self.root.ids.sm
-        sm.transition = SlideTransition(direction='left', duration=self.animation_speed)
-        sm.current = 'ThumbnailView'
-
-        self.reload_thumbnailview()
         
     def reload_thumbnailview(self, filter_option=None, enable_or=False):
 
@@ -1231,13 +1362,16 @@ class MyDataBaseApp(App):
         self.threads['load_thumbnails'].start()
 
     def open_jump_popup(self):
+
+        self.popup_mode = 'jump'
+        
         content = JumpPopUp()
         self.popup = Popup(title='ページ移動', content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=True)
         self.popup.open()
 
     def jump_thumbnail(self, text):
         self.change_thumbnailview(text)
-        self.popup.dismiss()
+        self.close_popup()
 
     def _reload_jump_layout(self):
 
@@ -1355,6 +1489,31 @@ class MyDataBaseApp(App):
 
         self.dbm.update_record(self.data_title, save_dict)
 
+    # ファイルの追加
+    def open_file_entry_popup(self):
+        self.popup_mode = 'file_entry'
+        self.entry_files = []
+
+        msg = '次の画像を追加します。よろしいですか？'
+        content = YesNoPopUp(text=msg, subtext='', yes=self.start_file_entry, no=self.close_popup)
+        self.popup = Popup(title="確認", content=content, size_hint=(None, None), size=(600, 500), auto_dismiss=False)
+        self.popup.open()
+        self.op_is_active = True
+
+    def add_file_entry(self, path):
+        self.entry_files.append(path)
+        self.popup.content.subtext += (os.path.basename(path) + '\n')
+
+    def start_file_entry(self):
+
+        if len(self.entry_files) == 0:
+            return
+
+        self.error_entry = []
+        self.dbm.add_files(self.data_title, self.entry_files)
+        
+        self.dbm.start_copy()
+        self._open_progress('copy')
 
     # 画像選択モード
     def select_image(self, thumbnail):

@@ -100,6 +100,16 @@ BoxLayout:
                 #on_release: app.open_tag_setting()
                 on_release: app.change_mode('tag') if(self.state=='down') else app.change_mode('normal')
                 color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
+            ActionToggleButton:
+                id: tagsetting
+                text: 'ƒŠƒ“ƒN'
+                icon: 'data/icons/share.png'
+                icon_height: root.icon_size
+                icon_width: root.icon_size
+                group: 'select_mode'
+                #on_release: app.open_tag_setting()
+                on_release: app.change_mode('link') if(self.state=='down') else app.change_mode('normal')
+                color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
 
     StackLayout:
         id: additional_option
