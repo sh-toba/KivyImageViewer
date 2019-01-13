@@ -5,8 +5,6 @@ DataBaseScreen:
     name: 'ImageView'
     fullscreen: True
 
-    anim_speed: 0.05
-
     BoxLayout:
         orientation:'vertical'
 
@@ -17,43 +15,55 @@ DataBaseScreen:
             Image:
                 source: app.image_file_path
                 allow_stretch: True
-                anim_delay: root.anim_speed
+                anim_delay: app.gif_speed
+                no_cache: True
                 
             BoxLayout:
-                Button: 
+                BoxLayout:
+                    orientation:'vertical'
                     size_hint_x: .25
-                    text : ''
-                    background_color: 0,0,0,0
-                    on_release: app.change_view_image('previous')
+                    ImageViewButton: 
+                        size_hint_y: .25
+                        text : 'Prev favorite'
+                        on_press: app.change_view_image('previous', 'favorite')
+                    ImageViewButton: 
+                        size_hint_y: .5
+                        text : 'Prev'
+                        on_press: app.change_view_image('previous')
+                    ImageViewButton: 
+                        size_hint_y: .25
+                        text : 'Prev chapter'
+                        on_press: app.change_view_image('previous', 'chapter')
                 BoxLayout:
                     orientation:'vertical'
                     size_hint_x: .5
-                    Button: 
+                    ImageViewButton: 
                         size_hint_y: .25
-                        text : ''
-                        font_size: 48
-                        color: 0,8,0,0.2
-                        background_color: 0,0,0,0
-                        on_press: app.change_anim_speed(root, 'up')
-                    Button: 
+                        text : 'Speed Up'
+                        on_press: app.change_anim_speed('up')
+                    ImageViewButton: 
                         size_hint_y: .5
-                        text : ''
-                        font_size: 48
-                        color: 0,8,0,0.2
-                        background_color: 0,0,0,0
+                        text : 'FullScreen'
                         on_press: app.change_view_fullscreen()
-                    Button: 
+                    ImageViewButton: 
                         size_hint_y: .25
-                        text : ''
-                        font_size: 48
-                        color: 0,8,0,0.2
-                        background_color: 0,0,0,0
-                        on_press: app.change_anim_speed(root, 'down')
-                Button: 
+                        text : 'Speed Down'
+                        on_press: app.change_anim_speed('down')
+                BoxLayout:
+                    orientation:'vertical'
                     size_hint_x: .25
-                    text : ''
-                    background_color: 0,0,0,0
-                    on_release: app.change_view_image('next')
+                    ImageViewButton: 
+                        size_hint_y: .25
+                        text : 'Next favorite'
+                        on_press: app.change_view_image('next', 'favorite')
+                    ImageViewButton: 
+                        size_hint_y: .5
+                        text : 'Next'
+                        on_press: app.change_view_image('next')
+                    ImageViewButton: 
+                        size_hint_y: .25
+                        text : 'Next chapter'
+                        on_press: app.change_view_image('next', 'chapter')
 
         BoxLayout:
             id: iv_footer
@@ -90,7 +100,7 @@ DataBaseScreen:
                         on_release: app.change_view_image('previous')
                         nocache: True
                     Label:
-                        text: '{0}/{1}'.format(app.image_idx+1, app.image_num)
+                        text: '{0}/{1}'.format(app.image_idx+1, app.loaded_file_num)
                         color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
                     ImageButton:
                         source: 'data/icons/go_next.png'
