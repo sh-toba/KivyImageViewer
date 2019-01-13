@@ -7,6 +7,32 @@ DataBaseScreen:
 
     BoxLayout:
         orientation:'vertical'
+
+        padding: [0,15,0,0]
+        AnchorLayout:
+            id: header
+            anchor_x:'center'
+            anchor_y:'center'
+            padding: [10,0,10,0]
+            size_hint_y: None
+            height: 40
+
+            AnchorLayout:
+                anchor_x:'left'
+                anchor_y:'center'
+                Label:
+                    text:app.loaded_title
+                    font_size: 16
+
+            AnchorLayout:
+                anchor_x:'right'
+                anchor_y:'center'
+                Button:
+                    id: fe_btn
+                    text:'âèú'
+                    size_hint:None, None
+                    size: 80, 40
+                    on_release: app.exit_filter(self)
         
         ScrollView:
             StackLayout:
@@ -14,7 +40,7 @@ DataBaseScreen:
 
                 orientation: 'lr-tb'
 
-                padding: 20
+                padding: [10,0,10,0]
                 spacing: 10
                 
                 size_hint_y: None
@@ -49,4 +75,4 @@ DataBaseScreen:
                 anchor_x: 'center'
                 anchor_y: 'top'
                 Label:
-                    text: '{0}-{1} of {2}'.format(app.divided_slice[0]+1, app.divided_slice[1]+1, app.image_num)
+                    text: '{0}-{1} of {2}'.format(app.page_range[0]+1, app.page_range[1]+1, app.view_file_num)

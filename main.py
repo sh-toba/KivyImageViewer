@@ -3,7 +3,6 @@ import os, sys, logging
 
 import pathlib, glob, time, math, threading, json, copy, webbrowser
 from functools import partial
-import numpy as np
 from itertools import chain
 
 from kivy.config import Config
@@ -77,7 +76,6 @@ class ThumbnailJump(Button):
 class ImageButton(ButtonBehavior, Image):
     pass
 
-
 class NewEntryLayout(BoxLayout):
     pass
 
@@ -112,76 +110,10 @@ class MyDataBaseApp(App):
     #logger.addHandler(sh)
     #sh.setFormatter(formatter)
     
-    curdir = os.path.dirname(__file__)
-
-    NO_IMAGE = StringProperty()
-    
-    max_thumnail = 50 # 配置する最大サムネイル数
-    max_jump_button = 9 # 配置するジャンプボタン数
-    animation_speed = .4
-    allow_stretch = True
-
-    screen_title = StringProperty()
-    hide_menu = BooleanProperty(False)
-
-    # 読み込んだ画像全体の情報
-    data_title = StringProperty()
-    image_dir = StringProperty()
-    image_list = ListProperty([]) # 読み込んでいる画像ファイルの絶対パス
-    image_num = NumericProperty()
-
-    image_selected = []
-    image_option = {
-        'favorite':[],
-        'chapter':[]
-    }
-
-    item_select_mode = 'normal' # normal:画像ビューへ, trash:ゴミ箱, favorite:お気に入り選択、chapter:チャプター選択
-    image_filter_mode = None
-
-    range_selectable = False
-    range_select_base = None
-    view_size = NumericProperty()
-
-    image_view_index = []
-    image_view_num = NumericProperty()
-    divided_num = NumericProperty()
-    divided_index = None
-    divided_slice = ListProperty([0,0])
-    thumbnail_num  = 0
-
-    loading_screen = False
-    loading_thumbnail = False
-    load_cancel = False
-
-    popup_mode = 'close'
-    op_is_active = False
-    task_remain = False
-    entry_count = 0
-
-    db_view_mode = 'Title'
-    
-    # image_view用
-    image_idx = NumericProperty()
-    image_file_name = StringProperty()
-    image_file_path = StringProperty()
-
-    # ファイルコピーの進捗
-    now_title = StringProperty()
-    now_task = NumericProperty()
-    task_num = NumericProperty()
-    task_copied_file = NumericProperty()
-    task_file_num = NumericProperty()
-    task_progress = NumericProperty()
-
-    # フィルター用情報
-    db_filter = {
-        'options':{},
-        'enable_or':False,
-        'init_chars':[],
-        'is_favorite':False
-    }
-    ic_filter_map = {
+    CURRENT_DIR = os.path.dirname(__file__)
+    HEADER_OPT_COLOR = [0.128, 0.128, 0.128, 1]
+    NO_IMAGE = StringProperty('data/noimage.png')
+    IC_FILTER_MAP = {
         'あ':['あ','い','う','え','お'],
         'か':['か','き','く','け','こ'],
         'さ':['さ','し','す','せ','そ'],
@@ -193,6 +125,77 @@ class MyDataBaseApp(App):
         'ら':['ら','り','る','れ','ろ'],
         'わ':['わ','を','ん'],
         '他':['他']
+    }
+    LANG_MAP_JP2EN = {
+        'お気に入り':'favorite',
+        'チャプター':'chapter'
+    }
+
+    # TODO: 設定項目 - 後々、設定ファイルから読み込むようにする
+    max_thumnail = 50 # 配置する最大サムネイル数
+    max_jump_button = 9 # 配置するジャンプボタン数
+    view_size = NumericProperty(1)
+    animation_speed = .4
+    gif_speed = NumericProperty(0.05)
+
+    # ヘッダー・フッターメニュー用
+    screen_title = StringProperty()
+    hide_menu = BooleanProperty(False)
+    item_select_mode = 'normal' # normal:画像ビューへ, select:選択, favorite:お気に入り選択、chapter:チャプター選択
+
+    # DataBaseItemView用
+    popup_mode = 'close'
+
+    op_is_active = False
+    task_remain = False
+    entry_count = 0
+
+    # ThumbnailView用
+    loaded_title = StringProperty() # 表示中の画像タイトル TODO:GUI上に他情報も併せて表示する？
+    loaded_file_dir = ''
+    loaded_file_list = ListProperty([]) # 読み込んでいる画像ファイルの絶対パス
+    loaded_file_num = NumericProperty()
+
+    selected_file_index = set([])
+    file_options = {
+        'favorite':set([]),
+        'chapter':set([])
+    }
+    range_selectable = False
+    range_select_base = None
+    sort_mode = False
+
+    view_file_index = []
+    view_file_num = 0
+    page_num = NumericProperty()
+    page_index = None
+    page_range = ListProperty([0,0])
+    thumbnail_num  = 0
+
+    loading_thumbnail = False
+    load_cancel = False
+
+    # ImageView用
+    image_idx = NumericProperty()
+    image_file_name = StringProperty()
+    image_file_path = StringProperty()
+
+    help_on = BooleanProperty(False)
+    
+    # 表示制限関連
+    # TODO: 前回設定の保存と反映
+
+    tv_filter = {
+        'options':{},
+        'enable_or':False,
+    }
+
+    db_view_mode = 'Title'
+    db_filter = {
+        'options':{},
+        'enable_or':False,
+        'init_chars':[],
+        'is_favorite':False
     }
 
     # thread
@@ -207,9 +210,6 @@ class MyDataBaseApp(App):
         #logging.debug('Start MyDataBaseApp')
 
         self.title = 'MyDataBase'
-        self.view_size = 1
-
-        self.NO_IMAGE = 'data/noimage.png'
 
         Window.bind(on_dropfile = self._on_drop_files)
 
@@ -274,9 +274,9 @@ class MyDataBaseApp(App):
             self.reload_db_items()
 
             sm = self.root.ids.sm
-            if sm.current is 'ThumbnailView':
-                self.reload_data()
-                self.reload_thumbnailview()
+            if sm.current == 'ThumbnailView':
+                if self.reload_data():
+                    self.reload_thumbnailview()
             
             self.task_remain = False
         
@@ -303,33 +303,29 @@ class MyDataBaseApp(App):
     def change_mode(self, mode):
 
         self.item_select_mode = mode
-        self.range_selectable = False
 
-        if self.root.ids.sm.current is 'DataBaseItemsView':
+        if self.root.ids.sm.current == 'DataBaseItemsView':
             option_layout = self.root.ids.additional_option
             
-            if mode == 'normal':
-                height = 0
-                option_layout.clear_widgets()
-            elif mode == 'trash':
+            if mode == 'select':
                 height = 40
                 option_layout.clear_widgets()
-                tmp_button = Button(text='削除',size_hint_x=None,width=80, background_color=[0.128, 0.128, 0.128, 1])
+                tmp_button = Button(text='削除',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
                 tmp_button.bind(on_release=self.delete_db_items)
                 option_layout.add_widget(tmp_button)
             elif mode == 'tag':
                 height = 40
                 option_layout.clear_widgets()
 
-                tmp_button = Button(text='タグ登録',size_hint_x=None,width=80, background_color=[0.128, 0.128, 0.128, 1])
+                tmp_button = Button(text='タグ登録',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
                 tmp_button.bind(on_release=self.open_tag_setting)
                 option_layout.add_widget(tmp_button)
 
-                tmp_button2 = Button(text='CSV出力',size_hint_x=None,width=90, background_color=[0.128, 0.128, 0.128, 1])
+                tmp_button2 = Button(text='CSV出力',size_hint_x=None,width=90, background_color=self.HEADER_OPT_COLOR)
                 #tmp_button2.bind(on_release=self.open_tag_setting)
                 option_layout.add_widget(tmp_button2)
 
-                tmp_button3 = Button(text='CSV読込み',size_hint_x=None,width=100, background_color=[0.128, 0.128, 0.128, 1])
+                tmp_button3 = Button(text='CSV読込み',size_hint_x=None,width=100, background_color=self.HEADER_OPT_COLOR)
                 #tmp_button3.bind(on_release=self.open_tag_setting)
                 option_layout.add_widget(tmp_button3)
 
@@ -337,9 +333,9 @@ class MyDataBaseApp(App):
                 height = 40
                 option_layout.clear_widgets()
                 tmp_txt = 'フィルタOFF' if self.db_filter['is_favorite'] else 'フィルタON'
-                tmp_button = ToggleButton(text=tmp_txt,size_hint_x=None,width=120, background_color=[0.128, 0.128, 0.128, 1])
+                tmp_button = ToggleButton(text=tmp_txt,size_hint_x=None,width=120, background_color=self.HEADER_OPT_COLOR)
                 tmp_button.state = 'down' if self.db_filter['is_favorite'] else 'normal'
-                tmp_button.bind(on_release=self.chage_db_mode_favorite)
+                tmp_button.bind(on_release=self.change_db_mode_favorite)
                 option_layout.add_widget(tmp_button)
             else:
                 height = 0
@@ -347,25 +343,36 @@ class MyDataBaseApp(App):
 
             Animation(height=height, d=.3, t='out_quart').start(option_layout)
 
-        elif self.root.ids.sm.current is 'ThumbnailView':
+        elif self.root.ids.sm.current == 'ThumbnailView':
             option_layout = self.root.ids.additional_option
-            
-            if mode == 'normal':
-                self.image_selected[:] = False
+                            
+            if mode in ['select', 'favorite', 'chapter']:
+                height = 40
+                option_layout.clear_widgets()
+
+                reset_button = Button(text='全解除',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
+                reset_button.bind(on_release=self.reset_file_options)
+                option_layout.add_widget(reset_button)
+                
+                if mode == 'select':
+                    range_button = ToggleButton(text='範囲選択',size_hint_x=None,width=90, background_color=self.HEADER_OPT_COLOR)
+                    range_button.state = 'down' if self.range_selectable else 'normal'
+                    range_button.bind(on_release=self.change_range_option)
+                    option_layout.add_widget(range_button)
+
+                    tmp_button = Button(text='削除',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
+                    tmp_button.bind(on_release=self.delete_files)
+                    option_layout.add_widget(tmp_button)
+
+                    tmp_button2 = ToggleButton(text='並び替え',size_hint_x=None,width=100, background_color=self.HEADER_OPT_COLOR)
+                    tmp_button2.bind(on_release=self.change_sort_option)
+                    tmp_button2.state = 'down' if self.sort_mode else 'normal'
+                    option_layout.add_widget(tmp_button2)
+            else:
+                self.selected_file_index = set([])
                 height = 0
                 option_layout.clear_widgets()
                 self._update_all_thumbnail_color()
-            else:
-                height = 40
-                option_layout.clear_widgets()
-                range_button = ToggleButton(text='範囲選択',size_hint_x=None,width=90, background_color=[0.128, 0.128, 0.128, 1], state='normal', background_down='atlas://data/images/defaulttheme/action_item_down')
-                range_button.bind(on_release=self.change_range_option)
-                option_layout.add_widget(range_button)
-
-                if mode == 'trash':
-                    tmp_button = Button(text='削除',size_hint_x=None,width=80, background_color=[0.128, 0.128, 0.128, 1])
-                    tmp_button.bind(on_release=self.delete_images)
-                    option_layout.add_widget(tmp_button)
 
             Animation(height=height, d=.3, t='out_quart').start(option_layout)
 
@@ -396,7 +403,7 @@ class MyDataBaseApp(App):
 
         sm = self.root.ids.sm
 
-        if sm.current in ['ImageView']:
+        if not sm.current in ['DataBaseItemsView','ThumbnailView']:
             return
 
         #ポップアップ構造のテンプレート読み込み
@@ -404,25 +411,7 @@ class MyDataBaseApp(App):
         tp = content.ids.tp
         tp.clear_tabs()
 
-        # テスト用
-        if sm.current is 'InitialScreen':
-
-            db_component = {}
-            db_component['ジャンル'] = ['カテゴリ{}'.format(i) for i in range(60)]
-            db_component['属性'] = ['タイプ{}'.format(i) for i in range(50)]
-
-            for key, val_list in db_component.items():
-                #tp_item = TabbedPanelItem(text=key)
-                th = TabbedPanelHeader(text=key)
-                filter_items = self._load_template('FilterItems')
-                for val in val_list:
-                    #print('{0} - {1}'.format(key, val))
-                    filter_items.ids.fi.add_widget(FilterItem(text=val))
-                    #filter_items.add_widget(FilterItem(text=val))
-                th.content = filter_items
-                tp.add_widget(th)
-
-        elif sm.current is 'DataBaseItemsView':
+        if sm.current == 'DataBaseItemsView':
 
             tag_list = {}
             for key in sorted(self.db_tags.keys()):
@@ -439,7 +428,7 @@ class MyDataBaseApp(App):
                 th.content = filter_items
                 tp.add_widget(th)
 
-        elif sm.current is 'ThumbnailView':
+        elif sm.current == 'ThumbnailView':
             th = TabbedPanelHeader(text='その他')
             filter_items = self._load_template('FilterItems')
             filter_items.ids.fi.add_widget(FilterItem(text='お気に入り'))
@@ -456,7 +445,7 @@ class MyDataBaseApp(App):
 
         sm = self.root.ids.sm
 
-        if sm.current is 'InitialScreen':
+        if sm.current == 'InitialScreen':
             print('OR enable : ', eo_active)
             for th in tp.tab_list:
                 #print('[{0}] - [{1}]'.format(acc_item.title, acc_item.id))
@@ -464,7 +453,7 @@ class MyDataBaseApp(App):
                 for fi in th.content.ids.fi.children:
                     print('{0} - {1}'.format(fi.text, fi.ids.cb.active))
 
-        elif sm.current is 'DataBaseItemsView':
+        elif sm.current == 'DataBaseItemsView':
             self.db_filter['options']={}
             for th in tp.tab_list:
                 key = th.text
@@ -479,25 +468,33 @@ class MyDataBaseApp(App):
             self.reload_db_header(filt_on=True)
             self.reload_db_items()
 
-        elif sm.current is 'ThumbnailView':
-            filter_option={}
+        elif sm.current == 'ThumbnailView':
+            self.tv_filter['enable_or'] = eo_active
             for th in tp.tab_list:
                 for fi in th.content.ids.fi.children:
-                    # TODO:GUIの日本語表示と内部の表現の切り替えの仕方を検討する
-                    if fi.text == 'お気に入り':
-                        filter_option['favorite'] = fi.ids.cb.active
-                    elif fi.text == 'チャプター':
-                        filter_option['chapter'] = fi.ids.cb.active
-
-            self.reload_thumbnailview(filter_option=filter_option, enable_or=eo_active)
+                    conv_text = self.LANG_MAP_JP2EN[fi.text]
+                    self.tv_filter['options'][conv_text] = fi.ids.cb.active
+                    #if fi.text == 'お気に入り':
+                        #filter_option['favorite'] = fi.ids.cb.active
+                    #elif fi.text == 'チャプター':
+                        #filter_option['chapter'] = fi.ids.cb.active
+            self.reload_thumbnailview()
 
         self.close_popup()
 
     def exit_filter(self,instance):
-        self.db_filter['options'] = {}
-        self.db_filter['enable_or'] = False
-        self.reload_db_header()
-        self.reload_db_items()
+
+        sm = self.root.ids.sm
+        if sm.current == 'DataBaseItemsView':
+            self.db_filter['options'] = {}
+            self.db_filter['enable_or'] = False
+            self.reload_db_header()
+            self.reload_db_items()
+
+        elif sm.current == 'ThumbnailView':
+            self.tv_filter['enable_or'] = False
+            self.tv_filter['options'] = {}
+            self.reload_thumbnailview()
 
     def _on_drop_files(self, window, file_path):
 
@@ -505,7 +502,7 @@ class MyDataBaseApp(App):
         
         # ドロップしたスクリーン別に操作を変える
         sm = self.root.ids.sm
-        if sm.current is 'DataBaseItemsView':
+        if sm.current == 'DataBaseItemsView':
             if self.popup_mode == 'close':
                 self.open_entry_popup()
 
@@ -519,7 +516,7 @@ class MyDataBaseApp(App):
                 if ext in [".jpg", ".jpeg", ".png", ".bmp"]:
                     self.popup.content.im_source = path
         
-        if sm.current is 'ThumbnailView':
+        if sm.current == 'ThumbnailView':
             if self.popup_mode == 'close':
                 self.open_file_entry_popup()
 
@@ -542,19 +539,29 @@ class MyDataBaseApp(App):
         # インスタンス取得
         self.dbm = databasemanager.DataBaseManager() 
 
-        # データベース作成
-        # TODO; テスト用 - 実際には前画面から取得する
-        db_root = os.path.join(self.curdir,'data', '__tmp__', 'testDB')
+        # TODO: 実際には、データベース作成機能が付く
+        db_root = os.path.join(self.CURRENT_DIR,'data', '__tmp__', 'testDB')
+        if not os.path.exists(db_root):
+            os.makedirs(db_root, exist_ok=True)
 
         self.db_root = db_root
         if not self.dbm.connect_database(self.db_root):
-            # TODO: 実際には、データベース作成画面がPopupされる予定
             additional_tags = {
                 'タイプ': 'text',
                 'ジャンル': 'text',
                 'Misc': 'text'
             }
             self.dbm.create_database(self.db_root,additional_tags=additional_tags)
+
+            db_tags = {
+                'タイプ': 1,
+                'ジャンル': 1,
+                'Misc': 2
+            }
+            tag_file = open(os.path.join(self.db_root, 'tags.json'), 'w')
+            json.dump(db_tags, tag_file)
+            tag_file.close()
+        # TODO: ここまで前機能
 
         # 各タグの最大登録数はjsonファイルに記録しておく
         tag_file = open(os.path.join(self.db_root, 'tags.json'), 'r')
@@ -574,14 +581,14 @@ class MyDataBaseApp(App):
             self.db_filter['init_chars'] = []
         else:
             ic = instance.text
-            self.db_filter['init_chars'] = copy.deepcopy(self.ic_filter_map[ic])
+            self.db_filter['init_chars'] = copy.deepcopy(self.IC_FILTER_MAP[ic])
         self.reload_db_items()
 
     def switch_db_view(self, spinner, text):
         self.db_view_mode = text
         self.reload_db_items()
     
-    def chage_db_mode_favorite(self, instance):
+    def change_db_mode_favorite(self, instance):
         self.db_filter['is_favorite'] ^= True
         tmp_txt = 'フィルタOFF' if self.db_filter['is_favorite'] else 'フィルタON'
         instance.text = tmp_txt
@@ -590,36 +597,36 @@ class MyDataBaseApp(App):
     def select_db_item(self, instance):
 
         if self.db_view_mode == 'Title':
-            if self.item_select_mode is 'normal':
-                self.data_title = instance.title
+            if self.item_select_mode == 'normal':
+                self.loaded_title = instance.title
                 self.go_thumbnailview()
 
-            elif self.item_select_mode is 'trash':
+            elif self.item_select_mode == 'select':
                 instance.is_selected ^= True
 
-            elif self.item_select_mode is 'favorite':
+            elif self.item_select_mode == 'favorite':
                 instance.is_favorite ^= True
                 self.dbm.update_record(title=instance.title, values_dict={'IsFavorite':int(instance.is_favorite)})
 
-            elif self.item_select_mode is 'tag':
+            elif self.item_select_mode == 'tag':
                 self.open_tag_edit(instance.title)
 
-            elif self.item_select_mode is 'link':
+            elif self.item_select_mode == 'link':
                 url = self.dbm.get_items('Link', title=instance.title, convert=True)
                 if not url[0] is None:
                     if not url[0] == '':
                         webbrowser.open(url[0])
         else:
-            if self.item_select_mode is 'normal':
+            if self.item_select_mode == 'normal':
                 self.db_filter['options'] = {self.db_view_mode:[instance.title]}
                 self.db_filter['enable_or'] = False
                 self.reload_db_header(filt_on=True)
                 self.reload_db_items()
-            elif self.item_select_mode is 'favorite':
+            elif self.item_select_mode == 'favorite':
                 instance.is_favorite ^= True
                 self.dbm.update_tag(self.db_view_mode, instance.title, values_dict={'IsFavorite':int(instance.is_favorite)})
 
-            elif self.item_select_mode is 'link':
+            elif self.item_select_mode == 'link':
                 url = self.dbm.get_tag_items(self.db_view_mode, 'Link', instance.title, convert=True)
                 if not url[0] is None:
                     if not url[0] == '':
@@ -744,7 +751,7 @@ class MyDataBaseApp(App):
 
         sm = self.root.ids.sm
 
-        if not sm.current is 'DataBaseItemsView':
+        if not sm.current == 'DataBaseItemsView':
             return
 
         #ポップアップ構造のテンプレート読み込み
@@ -832,11 +839,11 @@ class MyDataBaseApp(App):
             tag_list = sorted([''] + self.dbm.get_tag_items(table, 'Name', convert=True))
             for th in self.popup.content.ids.tp.tab_list:
                 for child in th.content.children:
-                    if child.__class__.__name__ is 'TagEditLayout':
+                    if child.__class__.__name__ == 'TagEditLayout':
                         key = child.title
                         if key == table:
                             for ch in child.children:
-                                if ch.__class__.__name__ is 'GridLayout':
+                                if ch.__class__.__name__ == 'GridLayout':
                                     for c in ch.children:
                                         c.values = tag_list
         else:
@@ -924,7 +931,6 @@ class MyDataBaseApp(App):
         content.ids.link_input.text = ''
         content.im_source = self.NO_IMAGE
 
-
     def open_tag_edit(self, title):
 
         content = self._load_template('TagEdit')
@@ -981,11 +987,11 @@ class MyDataBaseApp(App):
         new_title = instance.ids.title_input.text
         if not before_title == new_title:
             msg = ''
-            if new_title is '':
+            if new_title == '':
                 msg = 'タイトルが未入力です'
             elif self.dbm.title_is_exist(title=new_title):
                 msg = '登録済みのタイトル名です'
-            if not msg is '':
+            if not msg == '':
                 content = SimplePopUp(text=msg, close=self.close_confirm_popup)
                 self.c_popup = Popup(title="警告", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
                 self.c_popup.open()
@@ -998,13 +1004,13 @@ class MyDataBaseApp(App):
 
         #TODO: 「クラス名で必要な情報を取得する」というゴリ押しを何とかしたい。
         for child in instance.ids.te_layout.children:
-            if child.__class__.__name__ is 'TagEditLayout':
+            if child.__class__.__name__ == 'TagEditLayout':
                 key = child.title
                 tmp_list = set([])
                 for ch in child.children:
-                    if ch.__class__.__name__ is 'GridLayout':
+                    if ch.__class__.__name__ == 'GridLayout':
                         for c in ch.children:
-                            if not c.text is '':
+                            if not c.text == '':
                                 tmp_list.add(c.text)
                 values_dict[key] = list(copy.deepcopy(tmp_list))
 
@@ -1090,7 +1096,7 @@ class MyDataBaseApp(App):
             ichar = th.content.ids.ic_btn.text
             link_str = th.content.ids.link_input.text
 
-            if (path is '') | (title is '') | (ichar is ''):
+            if (path == '') | (title == '') | (ichar == ''):
                 except_msg.append('{} : 未入力の必須項目があります'.format(th.text))
                 continue
 
@@ -1103,13 +1109,13 @@ class MyDataBaseApp(App):
 
             #TODO: 「クラス名で必要な情報を取得する」というゴリ押しを何とかしたい。
             for child in th.content.children:
-                if child.__class__.__name__ is 'TagEditLayout':
+                if child.__class__.__name__ == 'TagEditLayout':
                     key = child.title
                     tmp_list = set([])
                     for ch in child.children:
-                        if ch.__class__.__name__ is 'GridLayout':
+                        if ch.__class__.__name__ == 'GridLayout':
                             for c in ch.children:
-                                if not c.text is '':
+                                if not c.text == '':
                                     tmp_list.add(c.text)
                     values_dict[key] = list(copy.deepcopy(tmp_list))
 
@@ -1142,10 +1148,10 @@ class MyDataBaseApp(App):
         self.close_confirm_popup()
 
         self.error_entry = []
-        self.error_entry = self.dbm.insert_records(self.reserved_entry)
+        self.error_entry = self.dbm.insert_records(self.reserved_entry, self.file_move)
 
         if len(self.error_entry) != len(self.reserved_entry):
-            self.dbm.start_copy()
+            self.dbm.start_file_operation()
             self._open_progress('copy')
 
         return
@@ -1156,74 +1162,20 @@ class MyDataBaseApp(App):
         return
 
 
-    def _open_progress(self, p_type):
-        if p_type == 'copy':
-            content = ProgressPopUp()
-            self.p_popup = Popup(title="コピー進捗", content=content, size_hint=(None, None), size=(600, 200), auto_dismiss=False)
-        elif p_type == 'delete':
-            content = Label(text='しばらくお待ちください。', font_size=16)
-            self.p_popup = Popup(title="データ削除中", content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=False)
-
-        self.p_popup.open()
-        Clock.schedule_interval(partial(self._file_op_progress, p_type), 0.1)
-
-    def _file_op_progress(self, mode, *largs):
-
-        if mode is 'copy':
-            # 進捗の確認
-            cp_progress = self.dbm.get_copy_progress()
-            # GUI側への反映
-            self.now_title = cp_progress['title']
-            self.now_task = cp_progress['task_index']
-            self.task_num = cp_progress['task_num']
-            self.task_copied_file = cp_progress['copied_file']
-            self.task_file_num = cp_progress['file_num']
-            self.task_progress = (self.task_copied_file/self.task_file_num) * 100
-
-        # コピー進捗の確認
-        if self.dbm.file_op_is_alive():
-            return True
-        else:
-            # 完了後の処理を行う。内部のactiveフラグで一度のみ実行されるようにしている
-            if not self.op_is_active:
-                return False
-                
-            self.p_popup.dismiss()
-            msg_lines = ['処理が完了しました！']
-
-            if mode is 'copy':
-                if len(self.error_entry) != 0:
-                    msg_lines.append('[登録失敗]')
-                    msg_lines += self.error_entry
-                self.close_entry_popup()
-                    
-            elif mode is 'delete': 
-                self.op_is_active = False
-
-            # TODO: スレッド外でSQL文が実行できないため、
-            # フラグを立ててpopupのクローズイベントと同時に行っているが、無理やり感がある
-            self.task_remain = True
-
-            content = SimplePopUp(text='\n'.join(msg_lines), close=self.close_confirm_popup)
-            self.c_popup = Popup(title="登録完了", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=False)
-            self.c_popup.open()
-            
-            return False
-
-
     # ThumbnailViewイベント
     def go_thumbnailview(self):
         
-        self.reload_data()
+        if not self.reload_data():
+            return
         
         """
         # テスト用
-        for opt_key in self.image_option.keys():
-            for i in range(self.image_num):
+        for opt_key in self.file_options.keys():
+            for i in range(self.loaded_file_num):
                 if opt_key is 'favorite':
-                    self.image_option[opt_key][i] = ((i % 10) == 0)
+                    self.file_options[opt_key][i] = ((i % 10) == 0)
                 elif opt_key is 'chapter':
-                    self.image_option[opt_key][i] = ((i % 23) == 0)
+                    self.file_options[opt_key][i] = ((i % 23) == 0)
         """
 
         self.screen_title = 'サムネイルビュー'
@@ -1235,78 +1187,92 @@ class MyDataBaseApp(App):
 
     def reload_data(self):
 
-        self.image_dir, self.image_list = self.dbm.get_image_list(self.data_title)
-        self.image_num = len(self.image_list)
+        self.loaded_file_dir, self.loaded_file_list = self.dbm.get_file_list(self.loaded_title)
+        self.loaded_file_num = len(self.loaded_file_list)
 
-        self.logger.debug('get {} images from {}'.format(self.image_num, self.data_title))
-
-        # TODO : エラーハンドリング
-        if self.image_num == 0:
-            pass
+        self.logger.debug('get {} images from {}'.format(self.loaded_file_num, self.loaded_title))
         
-        self.image_selected = np.zeros(self.image_num, dtype=bool)
+        if self.loaded_file_num == 0:
+            return False
         
-        for opt_key in self.image_option.keys():
-            self.image_option[opt_key] = np.zeros(self.image_num, dtype=bool)
+        self.selected_file_index = set([])
+        
+        for opt_key in self.file_options.keys():
+            self.file_options[opt_key] = set([])
 
         # オプション値の読み取り
-        for opt_key in self.image_option.keys():
-            result = self.dbm.get_items(col_name=opt_key, title=self.data_title, convert=True)
+        for opt_key in self.file_options.keys():
+            result = self.dbm.get_items(col_name=opt_key, title=self.loaded_title, convert=True)
             self.logger.debug('get option {} -> {}'.format(opt_key, result))
             
-            opt_val = result[0]
+            opt_val = result
             if opt_val is None:
                 break
             elif type(opt_val) is str:
-                if not opt_val is '':
-                    self.image_option[opt_key][int(opt_val)] = True
+                if not opt_val == '':
+                    self.file_options[opt_key] = set([int(opt_val)])
             elif type(opt_val) is list:
-                for ov in opt_val:
-                    self.image_option[opt_key][int(ov)] = True
+                tmp_list = []
+                for r in opt_val:
+                    if r.isdecimal():
+                        tmp_list.append(int(r))
+                self.file_options[opt_key] = set(tmp_list)
 
+        return True
         
-    def reload_thumbnailview(self, filter_option=None, enable_or=False):
+    def reload_thumbnailview(self):
 
-        self.image_view_index = []
-
-        if filter_option is None:
-            self.image_view_index = [i for i in range(self.image_num)]
-
+        enable_or = self.tv_filter['enable_or']
+        
+        # 初期値
+        if enable_or:
+            tmp_set = set([])
         else:
-            tmp_list = np.zeros(self.image_num, dtype=bool)
-            tmp_list[:] = (not enable_or)
+            tmp_set = set(range(self.loaded_file_num))
 
-            for opt, flag in filter_option.items():
+        for opt_key, opt_enable in self.tv_filter['options'].items():
+            if opt_enable:
+                if enable_or:
+                    tmp_set |= self.file_options[opt_key]
+                else:
+                    tmp_set &= self.file_options[opt_key]
 
-                if flag:
-                    opt_list = self.image_option[opt][:]
-                    if enable_or:
-                        tmp_list |= opt_list
-                    else:
-                        tmp_list &= opt_list
+        """
+        if filter_option is None:
+            self.view_file_index = list(range(self.loaded_file_num))
+        else:
+            if enable_or:
+                tmp_list = set([])
+                for opt, flag in filter_option.items():
+                    if flag:
+                        tmp_list |= self.file_options[opt]
+            else:
+                tmp_list = set(range(self.loaded_file_num))
+                for opt, flag in filter_option.items():
+                    if flag:
+                        tmp_list &= self.file_options[opt]
+            self.view_file_index = sorted(tmp_list)
+        """
+        self.view_file_index = sorted(tmp_set)
+        self.view_file_num = len(self.view_file_index)
 
-            for i in range(self.image_num):
-                if tmp_list[i]:
-                    self.image_view_index.append(i)
+        if self.view_file_num == 0:
+            self.tv_filter['enable_or'] = False
+            self.tv_filter['options'] = {}
+            self.view_file_index = list(range(self.loaded_file_num))
+            self.view_file_num = len(self.view_file_index)
 
-        self.image_view_num = len(self.image_view_index)
+        screen = self.root.ids.sm.get_screen('ThumbnailView')
+        screen.ids.fe_btn.disabled = (self.view_file_num == self.loaded_file_num)
 
-        # TODO:エラーハンドリング - ポップアップ表示して、option is Noneにする
-        if self.image_view_num == 0:
-            filter_option = None
-            self.image_view_index = [i for i in range(self.image_num)]
-            self.image_view_num = len(self.image_view_index)
-
-        self.divided_index = 0
-        self.divided_num = math.ceil(self.image_view_num / self.max_thumnail)
-
-        self.image_filter_mode = filter_option
+        self.page_index = 0
+        self.page_num = math.ceil(self.view_file_num / self.max_thumnail)
 
         self.change_thumbnailview('1')
 
-    def change_thumbnailview(self, jump_info):
+    def change_thumbnailview(self, jump_info, wait_draw=False):
 
-        current_idx = self.divided_index
+        current_idx = self.page_index
 
         if type(jump_info) is str:
             jump_text = jump_info
@@ -1315,19 +1281,19 @@ class MyDataBaseApp(App):
         
         if jump_text.isdecimal():
             next_index = int(jump_text)
-            if (next_index < 1) | (self.divided_num < next_index):
+            if (next_index < 1) | (self.page_num < next_index):
                 return
         else:
             # 一つ前へ
             if jump_text == '<':
                 if current_idx != 1:
-                    next_index = self.divided_index - 1
+                    next_index = self.page_index - 1
                 else:
                     return
             # 一つ後へ
             elif jump_text == '>':
-                if current_idx != self.divided_num:
-                    next_index = self.divided_index + 1
+                if current_idx != self.page_num:
+                    next_index = self.page_index + 1
                 else:
                     return
             # ジャンプ
@@ -1342,14 +1308,14 @@ class MyDataBaseApp(App):
 
         self._wait_cancel()
 
-        self.divided_index = next_index
+        self.page_index = next_index
 
-        st_idx = (self.divided_index-1) * self.max_thumnail
+        st_idx = (self.page_index-1) * self.max_thumnail
         ed_idx = st_idx + self.max_thumnail-1
-        if ed_idx >= self.image_view_num:
-            ed_idx = self.image_view_num-1
-        self.divided_slice[0] = st_idx
-        self.divided_slice[1] = ed_idx
+        if ed_idx >= self.view_file_num:
+            ed_idx = self.view_file_num-1
+        self.page_range[0] = st_idx
+        self.page_range[1] = ed_idx
         self.thumbnail_num = ed_idx - st_idx + 1 
 
         #self._update_jump_buttons()
@@ -1358,7 +1324,11 @@ class MyDataBaseApp(App):
         # 既存サムネイルの削除
         self.root.ids.sm.get_screen('ThumbnailView').ids.thumbnails.clear_widgets()
 
-        self.threads['load_thumbnails'] = threading.Thread(target=self._add_thumbnails, daemon=True)
+        if wait_draw:
+            self.threads['load_thumbnails'] = threading.Thread(target=self._add_thumbnails_delayed, daemon=True)
+        else:
+            self.threads['load_thumbnails'] = threading.Thread(target=self._add_thumbnails, daemon=True)
+
         self.threads['load_thumbnails'].start()
 
     def open_jump_popup(self):
@@ -1379,36 +1349,36 @@ class MyDataBaseApp(App):
         layout.clear_widgets()
 
         layout.add_widget(ThumbnailJump(text='<'))
-        if self.max_jump_button >= self.divided_num:
-            for i in range(self.divided_num):
+        if self.max_jump_button >= self.page_num:
+            for i in range(self.page_num):
                 layout.add_widget(ThumbnailJump(text='{}'.format(i+1)))
         else:
             change_num = self.max_jump_button - 2
-            if self.divided_index < change_num:
+            if self.page_index < change_num:
                 for i in range(change_num):
                     layout.add_widget(ThumbnailJump(text='{}'.format(i+1)))
                 layout.add_widget(ThumbnailJump(text='...'))
-                layout.add_widget(ThumbnailJump(text='{}'.format(self.divided_num)))
-            elif self.divided_index > (self.divided_num - change_num + 1):
+                layout.add_widget(ThumbnailJump(text='{}'.format(self.page_num)))
+            elif self.page_index > (self.page_num - change_num + 1):
                 layout.add_widget(ThumbnailJump(text='{}'.format(1)))
                 layout.add_widget(ThumbnailJump(text='...'))
-                for i in range(self.divided_num-change_num+1,self.divided_num+1):
+                for i in range(self.page_num-change_num+1,self.page_num+1):
                     layout.add_widget(ThumbnailJump(text='{}'.format(i)))
             else:
                 change_num -= 2
                 layout.add_widget(ThumbnailJump(text='{}'.format(1)))
                 layout.add_widget(ThumbnailJump(text='...'))
                 for i, diff in enumerate(range(int(-change_num/2), math.ceil(change_num/2))):
-                    jump_index = self.divided_index + diff
+                    jump_index = self.page_index + diff
                     layout.add_widget(ThumbnailJump(text='{}'.format(jump_index)))
                 layout.add_widget(ThumbnailJump(text='...'))
-                layout.add_widget(ThumbnailJump(text='{}'.format(self.divided_num)))
+                layout.add_widget(ThumbnailJump(text='{}'.format(self.page_num)))
         layout.add_widget(ThumbnailJump(text='>'))
         layout.width = 48 * len(layout.children)
 
         for jump_btn in layout.children:
             if jump_btn.text.isdecimal():
-                if self.divided_index == int(jump_btn.text):
+                if self.page_index == int(jump_btn.text):
                     jump_btn.background_color = [0.0, 0.5, 0.8, 1.0]
                 else:
                     jump_btn.background_color = [0.6, 0.6, 0.6, 0.8]
@@ -1417,15 +1387,10 @@ class MyDataBaseApp(App):
 
     def _add_thumbnails(self):
 
-        # スクリーン移動のアニメーション用のスリープ
-        if self.loading_screen:
-            time.sleep(self.animation_speed + 0.1)
-            self.loading_screen = False
-        
         self.loading_thumbnail = False
         screen = self.root.ids.sm.get_screen('ThumbnailView')
 
-        for i, idx in enumerate(range(self.divided_slice[0], self.divided_slice[1]+1)):
+        for i, idx in enumerate(range(self.page_range[0], self.page_range[1]+1)):
 
             if self.load_cancel:
                 return
@@ -1434,7 +1399,7 @@ class MyDataBaseApp(App):
                 pass
             
             thumbnail = self._load_template('Thumbnail')
-            thumbnail.im_index = self.image_view_index[idx]
+            thumbnail.im_index = self.view_file_index[idx]
 
             screen.ids.thumbnails.add_widget(thumbnail)
             
@@ -1444,6 +1409,10 @@ class MyDataBaseApp(App):
             self.progress = ((i+1) / self.thumbnail_num) * 100
 
         return
+    
+    def _add_thumbnails_delayed(self):
+        time.sleep(self.animation_speed + 0.2)
+        self._add_thumbnails()
 
     def _update_thumbnail(self, dt):
         
@@ -1452,42 +1421,38 @@ class MyDataBaseApp(App):
 
             im_index = thumbnail.im_index
             
-            file_base, ext = os.path.splitext(self.image_list[im_index])
+            file_base, ext = os.path.splitext(self.loaded_file_list[im_index])
             if ext == '.zip':
                 thum_name = os.path.basename(file_base) + '.png'
-                thum_path = os.path.join(self.image_dir, '__thumbnail__', thum_name)
+                thum_path = os.path.join(self.loaded_file_dir, '__thumbnail__', thum_name)
                 #print(thum_path)
                 thumbnail.im_source = thum_path
             else:
-                thumbnail.im_source = os.path.join(self.image_dir, self.image_list[im_index])
+                thumbnail.im_source = os.path.join(self.loaded_file_dir, self.loaded_file_list[im_index])
             
             thumbnail.fa_source = 'data/icons/star.png'
             thumbnail.ch_source = 'data/icons/bookmark.png'
 
-            thumbnail.is_selected = self.image_selected[im_index]
+            thumbnail.is_selected = (im_index in self.selected_file_index)
 
             # TODO: 増えてくるようならここもfor文で回せないかを検討する
-            thumbnail.is_favorite = self.image_option['favorite'][im_index]
-            thumbnail.is_chapter = self.image_option['chapter'][im_index]
+            thumbnail.is_favorite = (im_index in self.file_options['favorite'])
+            thumbnail.is_chapter = (im_index in self.file_options['chapter'])
             
         finally:
             self.loading_thumbnail = False
             return
 
-    def _save_image_option(self):
+    def _save_file_options(self):
         """
         設定したオプションのデータベースへの反映。
         """
-
         save_dict = {}
-        for opt_key, opt_val in self.image_option.items():
-            index = np.where(opt_val)
-            index_list = list(index[0])
-            
-            save_dict[opt_key] = copy.deepcopy(index_list)
+        for opt_key, opt_val in self.file_options.items():
+            save_dict[opt_key] = sorted(opt_val)
             self.logger.debug('update {}'.format(save_dict))
 
-        self.dbm.update_record(self.data_title, save_dict)
+        self.dbm.update_record(self.loaded_title, save_dict)
 
     # ファイルの追加
     def open_file_entry_popup(self):
@@ -1510,13 +1475,13 @@ class MyDataBaseApp(App):
             return
 
         self.error_entry = []
-        self.dbm.add_files(self.data_title, self.entry_files)
-        
-        self.dbm.start_copy()
-        self._open_progress('copy')
+        if self.dbm.add_files(self.loaded_title, self.entry_files):
+            self.dbm.start_file_operation()
+            self._open_progress('copy')
 
-    # 画像選択モード
-    def select_image(self, thumbnail):
+
+    # サムネイル選択モード
+    def select_thumbnail(self, thumbnail):
 
         if self.root.ids.sm.current != 'ThumbnailView':
             return
@@ -1524,12 +1489,12 @@ class MyDataBaseApp(App):
         im_index = thumbnail.im_index
 
         # イメージビューへ 
-        if self.item_select_mode is 'normal':
+        if self.item_select_mode == 'normal':
 
             self._wait_cancel()
 
-            self.image_file_path = os.path.join(self.image_dir, self.image_list[im_index])
-            self.image_file_name = self.image_list[im_index]
+            self.image_file_path = os.path.join(self.loaded_file_dir, self.loaded_file_list[im_index])
+            self.image_file_name = self.loaded_file_list[im_index]
             self.image_idx = im_index
 
             #self._reset_mode() #normalモード以外では移らないのでいらない
@@ -1540,8 +1505,56 @@ class MyDataBaseApp(App):
             sm.current = 'ImageView'
         
         # 画像選択モード
-        else:
+        elif self.item_select_mode == 'select':
 
+            if self.sort_mode:
+                if (len(self.selected_file_index) != 0) & (not im_index in self.selected_file_index):
+                    self.sort_files(im_index)
+                    return
+
+            if self.range_selectable:  # 範囲選択モードON
+
+                if self.range_select_base is None:  # 基準位置が未選択
+                    thumbnail.is_based = True
+                    self.range_select_base = im_index
+                
+                else: # 基準位置が選択済み
+                    if self.range_select_base < im_index:
+                        s_index = self.range_select_base
+                        e_index = im_index
+                    else:
+                        s_index = im_index
+                        e_index = self.range_select_base
+                    
+                    for idx in range(s_index,e_index+1):
+                        self.selected_file_index.add(idx)
+                    
+                    self.range_select_base = None
+                    self._update_all_thumbnail_color()
+
+            else:
+                if im_index in self.selected_file_index:
+                    self.selected_file_index.remove(im_index)
+                else:
+                    self.selected_file_index.add(im_index)
+                thumbnail.is_selected ^= True
+
+        elif self.item_select_mode in ['favorite','chapter']:
+            
+            if im_index in self.file_options[self.item_select_mode]:
+                self.file_options[self.item_select_mode].remove(im_index)
+            else:
+                self.file_options[self.item_select_mode].add(im_index)
+            
+            self._save_file_options()
+
+            if self.item_select_mode == 'favorite':
+                thumbnail.is_favorite ^= True
+            elif self.item_select_mode == 'chapter':
+                thumbnail.is_chapter ^= True
+
+    """
+        else:
             # 範囲選択がONの場合
             if self.range_selectable:
 
@@ -1561,37 +1574,86 @@ class MyDataBaseApp(App):
                         s_index = im_index
                         e_index = self.range_select_base
                     
-                    if self.item_select_mode is 'trash':
-                        self.image_selected[s_index:e_index+1] = True
+                    if self.item_select_mode == 'select':
+                        #self.selected_file_index[s_index:e_index+1] = True
+                        for idx in range(s_index,e_index+1):
+                            self.selected_file_index.add(idx)
                     else:
-                        self.image_option[self.item_select_mode][s_index:e_index+1] ^= True
-                        self._save_image_option()
+                        for idx in range(s_index,e_index+1):
+                            self.file_options[self.item_select_mode].add(idx)
+
+                        self._save_file_options()
                     
                     self.range_select_base = None
                     self._update_all_thumbnail_color()
 
             # 単一選択
             else:
-                if self.item_select_mode is 'trash':
-                    self.image_selected[im_index] ^= True
+                if self.item_select_mode == 'select':
+                    #self.selected_file_index[im_index] ^= True
+                    if im_index in self.selected_file_index:
+                        self.selected_file_index.remove(im_index)
+                    else:
+                        self.selected_file_index.add(im_index)
                     thumbnail.is_selected ^= True 
                 else:
-                    self.image_option[self.item_select_mode][im_index] ^= True
-                    self._save_image_option()
-                    if self.item_select_mode is 'favorite':
+                    if im_index in self.file_options[self.item_select_mode]:
+                        self.file_options[self.item_select_mode].remove(im_index)
+                    else:
+                        self.file_options[self.item_select_mode].add(im_index)
+                    self._save_file_options()
+                    if self.item_select_mode == 'favorite':
                         thumbnail.is_favorite ^= True
-                    elif self.item_select_mode is 'chapter':
+                    elif self.item_select_mode == 'chapter':
                         thumbnail.is_chapter ^= True
-
-        return
+        """
 
     def change_range_option(self, instance):
         self.range_selectable ^= True
 
-    def delete_images(self, instance):
-        #TODO: 選択画像の削除 - データベースの方針決定が先のため保留
-        print('delete clicked')
-        pass
+    def change_sort_option(self, instance):
+        self.sort_mode ^= True
+
+    def reset_file_options(self, instance):
+
+        if self.item_select_mode == 'select':
+            self.selected_file_index = set([])
+
+        elif self.item_select_mode in ['favorite','chapter']:
+            self.file_options[self.item_select_mode] = set([])
+            self._save_file_options()
+
+        self._update_all_thumbnail_color()
+
+
+    # ファイルの削除
+    def delete_files(self, instance):
+
+        if len(self.selected_file_index) == 0:
+            return
+
+        msg = '選択中のファイルを削除します。\nよろしいですか？'
+        content = YesNoPopUp(text=msg, subtext='', yes=self.start_delete_files, no=self.close_confirm_popup)
+        self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(400, 400), auto_dismiss=False)
+        self.c_popup.open()
+
+    def start_delete_files(self):
+        
+        self.c_popup.dismiss()
+
+        self.op_is_active = True
+        if self.dbm.delete_files(self.loaded_title, self.selected_file_index):
+            self.root.ids.sm.get_screen('ThumbnailView').ids.thumbnails.clear_widgets()
+
+            self.dbm.start_file_operation()
+            self._open_progress('delete')
+
+    def sort_files(self, ref_index):
+        self.root.ids.sm.get_screen('ThumbnailView').ids.thumbnails.clear_widgets()
+
+        self.dbm.sort_files(self.loaded_title, ref_index, copy.deepcopy(self.selected_file_index))
+        self.reload_data()
+        self.reload_thumbnailview()        
     
     def _update_all_thumbnail_color(self):
         
@@ -1600,45 +1662,65 @@ class MyDataBaseApp(App):
             im_index = child.im_index
 
             child.is_based = False
-            child.is_selected = self.image_selected[im_index]
+            #child.is_selected = self.selected_file_index[im_index]
+            child.is_selected = im_index in self.selected_file_index
 
-            child.is_favorite = self.image_option['favorite'][im_index]
-            child.is_chapter = self.image_option['chapter'][im_index] 
+            child.is_favorite = im_index in self.file_options['favorite']
+            child.is_chapter = im_index in self.file_options['chapter']
 
 
     # ImageViewerイベント
-    def change_view_image(self, option='next'):
+    def change_view_image(self, option='next', skip='normal'):
         
         tmp_index = None
 
-        if option is 'next':
-            if self.item_select_mode in ['normal', 'trash']:
+        """
+        if option == 'next':
+            if self.item_select_mode in ['favorite','chapter']:
+                for i in sorted(self.file_options[self.item_select_mode]):
+                    if i > self.image_idx:
+                        tmp_index = i
+                        break
+            else:
                 tmp_index = self.image_idx + 1
-            elif self.item_select_mode in ['favorite','chapter']:
-                for i in range(self.image_idx+1, self.image_num):
-                    if self.image_option[self.item_select_mode][i]:
-                        tmp_index = i
-                        break
 
-        elif option is 'previous':
-            if self.item_select_mode in ['normal', 'trash']:
-                tmp_index = self.image_idx - 1
-            elif self.item_select_mode in ['favorite','chapter']:
-                for i in reversed(range(0, self.image_idx)):
-                    if self.image_option[self.item_select_mode][i]:
+        elif option == 'previous':
+            if self.item_select_mode in ['favorite','chapter']:
+                for i in reversed(sorted(self.file_options[self.item_select_mode])):
+                    if i < self.image_idx:
                         tmp_index = i
                         break
+            else:
+                tmp_index = self.image_idx - 1
+
+        """
+
+        if option == 'next':
+            if skip != 'normal':
+                for i in sorted(self.file_options[skip]):
+                    if i > self.image_idx:
+                        tmp_index = i
+                        break
+            else:
+                tmp_index = self.image_idx + 1
+
+        elif option == 'previous':
+            if skip != 'normal':
+                for i in reversed(sorted(self.file_options[skip])):
+                    if i < self.image_idx:
+                        tmp_index = i
+                        break
+            else:
+                tmp_index = self.image_idx - 1        
 
         if tmp_index is None:
             return
-        elif (tmp_index < 0) | (self.image_num-1 < tmp_index):
+        elif (tmp_index < 0) | (self.loaded_file_num-1 < tmp_index):
             return
         else:
             self.image_idx = tmp_index
-            self.image_file_path = os.path.join(self.image_dir, self.image_list[tmp_index])
-            self.image_file_name = self.image_list[tmp_index]
-            self.root.ids.sm.get_screen('ImageView').anim_speed = 0.05
-
+            self.image_file_path = os.path.join(self.loaded_file_dir, self.loaded_file_list[tmp_index])
+            self.image_file_name = self.loaded_file_list[tmp_index]
 
         return
 
@@ -1658,19 +1740,22 @@ class MyDataBaseApp(App):
         Animation(height=ab_height, d=.3, t='out_quart').start(ab)
         Animation(height=iv_footer_height, d=.3, t='out_quart').start(iv_footer)
 
-    def change_anim_speed(self, instance, option):
+    def change_anim_speed(self, option):
 
         if option == 'up':
-            tmp_speed = instance.anim_speed*0.5
-            instance.anim_speed = tmp_speed if (tmp_speed > 0.025) else 0.025
+            tmp_speed = self.gif_speed*0.5
+            self.gif_speed = tmp_speed if (tmp_speed > 0.025) else 0.025
         elif option == 'down':
-            tmp_speed = instance.anim_speed*2
-            instance.anim_speed = tmp_speed if (tmp_speed < 0.1) else 0.1
+            tmp_speed = self.gif_speed*2
+            self.gif_speed = tmp_speed if (tmp_speed < 0.1) else 0.1
 
+
+    def view_help(self, instance):
+        self.help_on = (instance.state == 'down')
 
     def _load_template(self, file_name):
         # kvファイル名の取得
-        kv_name = os.path.join(self.curdir, 'data', 'kv_template','{}.kv'.format(file_name).lower())
+        kv_name = os.path.join(self.CURRENT_DIR, 'data', 'kv_template','{}.kv'.format(file_name).lower())
         instance = Builder.load_file(kv_name)
         return instance
 
@@ -1688,16 +1773,72 @@ class MyDataBaseApp(App):
 
         self.root.ids.favorite.state = 'normal'
         self.root.ids.chapter.state = 'normal'
-        self.root.ids.trash.state = 'normal'
+        self.root.ids.select.state = 'normal'
 
         option_layout = self.root.ids.additional_option
         option_layout.clear_widgets()
 
-        self.image_selected[:] = False
+        self.selected_file_index = set([])
         self._update_all_thumbnail_color()
 
         height = 0
         Animation(height=height, d=.3, t='out_quart').start(option_layout)
+
+
+    def _open_progress(self, p_type):
+        if p_type == 'copy':
+            content = ProgressPopUp()
+            self.p_popup = Popup(title="データコピー中", content=content, size_hint=(None, None), size=(600, 200), auto_dismiss=False)
+        elif p_type == 'delete':
+            content = Label(text='しばらくお待ちください。', font_size=16)
+            self.p_popup = Popup(title="データ削除中", content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=False)
+
+        self.p_popup.open()
+        Clock.schedule_interval(partial(self._file_op_progress, p_type), 0.1)
+
+    def _file_op_progress(self, mode, *largs):
+
+        if mode == 'copy':
+            # 進捗の確認
+            cp_progress = self.dbm.get_file_op_progress()
+
+            content = self.p_popup.content
+            # GUI側への反映
+            content.now_title = cp_progress['title']
+            content.now_task = cp_progress['task_index']
+            content.task_num = cp_progress['task_num']
+            content.done_file = cp_progress['done_file']
+            content.file_num = cp_progress['file_num'] if cp_progress['file_num'] != 0 else 1
+
+        # コピー進捗の確認
+        if self.dbm.file_op_is_alive():
+            return True
+        else:
+            # 完了後の処理を行う。内部のactiveフラグで一度のみ実行されるようにしている
+            if not self.op_is_active:
+                return False
+                
+            self.p_popup.dismiss()
+            msg_lines = ['処理が完了しました！']
+
+            if mode == 'copy':
+                if len(self.error_entry) != 0:
+                    msg_lines.append('[登録失敗]')
+                    msg_lines += self.error_entry
+                self.close_entry_popup()
+                    
+            elif mode == 'delete': 
+                self.op_is_active = False
+
+            # TODO: スレッド外でSQL文が実行できないため、
+            # フラグを立ててpopupのクローズイベントと同時に行っているが、無理やり感がある
+            self.task_remain = True
+
+            content = SimplePopUp(text='\n'.join(msg_lines), close=self.close_confirm_popup)
+            self.c_popup = Popup(title="完了", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=False)
+            self.c_popup.open()
+            
+            return False
 
 
     def _keyboard_closed(self):
@@ -1723,15 +1864,46 @@ class MyDataBaseApp(App):
         if sm.current == 'ImageView':
             if keycode[1] == 'left':
                 self.change_view_image('previous')
-            if keycode[1] in ['right','enter']:
+            elif keycode[1] == 'right':
                 self.change_view_image('next')
-            if keycode[1] == 'backspace':
+            elif keycode[1] in ['up', 'down']:
+                self.change_anim_speed(keycode[1])
+            elif keycode[1] == 'backspace':
                 self.go_previous_screen()
 
         # Return True to accept the key. Otherwise, it will be used by
         # the system.
         return True
 
+    def exit_app(self):
+        content = YesNoPopUp(text='アプリを終了しますか？', subtext='', yes=self.stop, no=self.close_confirm_popup)
+        content.remove_widget(content.ids.sv)
+        
+        self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(400, 400), auto_dismiss=False)
+        self.c_popup.open()
+
+
+def show_all_child(parent, he=1):
+    """
+    デバッグ用：子要素のクラス名とidを列挙していく
+    """
+
+    try:
+        ids_info = parent.ids
+    except:
+        ids_info = 'None'
+    c_name = parent.__class__.__name__
+
+    print('{} {} ( child_ids = {} )'.format('>'*he, c_name, list(ids_info.keys())))
+    he += 1
+
+    try:
+        children = parent.children
+        for child in children:
+            show_all_child(child, he)
+        return
+    except:
+        return
 
 if __name__ == '__main__':
 

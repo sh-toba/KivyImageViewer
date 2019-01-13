@@ -22,7 +22,7 @@ BoxLayout:
     ImageButton:
         id: image
         source: root.im_source
-        on_press: app.select_image(root)
+        on_press: app.select_thumbnail(root)
         color: [0.0,0.8,0.6,1.0] if root.is_based else [0.0,0.6,0.8,0.5] if root.is_selected else [1.0,1.0,1.0,1.0]
         nocache: True
         anim_delay: -1

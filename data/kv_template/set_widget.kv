@@ -1,0 +1,266 @@
+#-*- coding: shift-jis -*-
+#:kivy 1.10.1
+
+<ThumbnailJump@Button>:
+    text: ''
+    font_size: 16
+    background_color: 0.6, 0.6, 0.6, 0.8
+    on_press: app.change_thumbnailview(self)
+
+<JumpPopUp@BoxLayout>:
+	orientation: 'vertical'
+    spacing: 10
+    
+    input_text: ''
+
+    AnchorLayout:
+        anchor_x:'center'
+        size_hint_y:None
+        height: 30
+        TextInput:
+            text: ''
+            hint_text:  '1 - {}'.format(app.page_num)
+            on_text: root.input_text = self.text
+            multiline: False
+ 
+	BoxLayout:
+		orientation: 'horizontal'
+		Button:
+			size_hint: .5, 1
+			text: 'OK'
+			on_release: app.jump_thumbnail(root.input_text)
+ 
+		Button:
+			size_hint: .5, 1
+			text: 'キャンセル'
+			on_release: app.close_popup()
+
+<ClickableLabel@ButtonBehavior+Label>:
+    #text_size: self.size
+    size: self.texture_size
+    halign: 'left'
+    #valign: 'center'
+    font_size: '16sp'
+    #color: 0, 0, 0, 1
+<ClickableLabelT@ToggleButtonBehavior+Label>:
+    #text_size: self.size
+    size: self.texture_size
+    halign: 'left'
+    #valign: 'center'
+    font_size: '16sp'
+    #color: 0, 0, 0, 1
+
+<FilterItem@BoxLayout>:
+    text: ''
+    #size_hint: None, None
+    #size: 150, 50
+    size_hint: None, None
+    height: 40
+    width: self.minimum_width
+    CheckBox:
+        id: cb
+        #color: 0, 0.4, 1.0, 1.0
+        size_hint_x: None
+        width: '32dp'
+    ClickableLabel:
+        on_press: cb._do_press()
+        size_hint_x:None
+        text: root.text
+
+<DBItem@BoxLayout>:
+    
+    title: ''
+    filenum: 0
+
+    fa_source: ''
+    
+    index: 0 
+    is_selected: False
+    is_favorite: False
+
+    size_hint: None, None
+    height:40
+    width: self.minimum_width
+
+    DBItemLabel:
+        text: '{}({})'.format(root.title, root.filenum)
+        color: [0.0,0.0,1.0,1.0] if root.is_selected else [0.25,0.25,0.25,1.0]
+        on_press: app.select_db_item(root)
+    
+    Image:
+        size_hint_x: None
+        width: 16
+        source: 'data/icons/star.png'
+        color: [1.0,0.0,0.0,1.0] if root.is_favorite else [1.0,1.0,1.0,0.0]
+
+<DBItemLabel@ButtonBehavior+Label>:
+    size_hint_x:None
+    size: self.texture_size
+    halign: 'left'
+    font_size: '16sp'
+
+<DBItemInitialChar@ToggleButton>:
+    text: ''
+    font_size: 16
+    background_color: 0.6, 0.6, 0.6, 0.8
+    group: 'initial_char'
+    on_release: app.adapt_ic_filter(self)
+<NewEntryLayout@BoxLayout>:
+    orientation: 'vertical'
+    BoxLayout:
+        size_hint_y: None
+        height: 30
+        canvas.before:
+            Color:
+                rgba: 0.5, 0.25, 0.25, 0.5
+            Rectangle:
+                size: self.size
+                pos: self.pos
+        Label:
+            text:'基本情報'
+            color: 1.0, 0.0, 0.0, 1
+    BoxLayout:
+        size_hint_y:None
+        height:40
+        Label:
+            text:'Path: '
+            size_hint_x: None
+            width: 100
+        TextInput:
+            id: path_input
+            text: ''
+            hint_text: 'パスを入力して下さい'
+            on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+    BoxLayout:
+        size_hint_y:None
+        height:40
+        Label:
+            text:'Title: '
+            size_hint_x: None
+            width: 100
+        TextInput:
+            id: title_input
+            text: ''
+            hint_text: 'タイトルを入力してください'
+            on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+        Label:
+            text: '頭文字'
+            size_hint_x:None
+            width: 60
+            halign: 'right'
+        Button:
+            id: ic_btn
+            size_hint_x: None
+            width: self.height
+            text: ''
+            on_press: app.select_initial(self)
+    BoxLayout:
+        size_hint_y:None
+        height:40
+        Label:
+            text:'Link: '
+            size_hint_x: None
+            width: 100
+        TextInput:
+            id: link_input
+            text: ''
+            hint_text: 'リンクするURLを入力してください'
+            on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+
+<TagEditItem@BoxLayout>:
+    text: ''
+    #size_hint: None, None
+    #size: 150, 50
+    size_hint: None, None
+    height: 40
+    width: self.minimum_width
+    CheckBox:
+        id: cb
+        #color: 0, 0.4, 1.0, 1.0
+        size_hint_x: None
+        width: '32dp'
+        group: 'tecb'
+    ClickableLabel:
+        on_press: cb._do_press(); app.reflect_tag(self, cb.active)
+        size_hint_x:None
+        text: root.text
+<TagEditLayout@BoxLayout>:
+    title: ''
+    orientation: 'vertical'
+    BoxLayout:
+        size_hint_y: None
+        height: 30
+        canvas.before:
+            Color:
+                rgba: 0.25, 0.5, 0.25, 0.5
+            Rectangle:
+                size: self.size
+                pos: self.pos
+        Label:
+            text:root.title
+            color: 0, 0.8, 0.4, 1
+
+<ImageViewButton@Button>:
+    font_size: 16
+    color: [0.8,0.8,0.8,0.8] if app.help_on else [0.8,0.8,0.8,0]
+    background_color: [0,0.4,0.8,0.5] if app.help_on else [0,0.4,0.8,0.0]
+
+<YesNoPopUp@BoxLayout>:
+	orientation: 'vertical'
+ 
+    Label:
+        size_hint_y: None
+        height: 40
+        text: root.text
+        font_size: 16
+    
+    ScrollView:
+        id: sv
+        Label:
+            size_hint_y:None
+            height: self.texture_size[1]
+            text: root.subtext
+ 
+	BoxLayout:
+		orientation: 'horizontal'
+        size_hint_y: None
+        height: 60
+ 
+		Button:
+			size_hint: .5, 1
+			text: 'はい'
+			on_release: root.yes()
+		Button:
+			size_hint: .5, 1
+			text: 'いいえ'
+			on_release: root.no()
+
+<SimplePopUp@BoxLayout>:
+	orientation: 'vertical'
+ 
+	Label:
+		text: root.text
+        font_size: 16
+    Button:
+        size_hint_y: None
+        height: 60
+        text: '閉じる'
+        on_release: root.close()
+
+<ProgressPopUp@BoxLayout>:
+	orientation: 'vertical'
+
+    now_title: ''
+    now_task: 0
+    task_num: 0
+    done_file: 0
+    file_num: 1
+
+    Label:
+        text: 'Title : {} ({}/{})'.format(root.now_title, root.now_task, root.task_num)
+        font_size: 16
+    Label:
+        text: 'ファイル数 : {}/{}'.format(root.done_file, root.file_num)
+        font_size: 16
+    ProgressBar:
+        value: (root.done_file/root.file_num) * 100

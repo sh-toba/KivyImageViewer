@@ -17,6 +17,7 @@ class DataBaseManager():
     DATABASE_NAME = 'database.sqlite'
     DATA_DIR = 'data'
     TAG_IMAGE_DIR = 'tag_image'
+    FILE_NUMBER_OF_DIGITS = 5
 
     SUPPORTED_EXT = ["jpg", "jpeg", "png", "bmp", "gif", "zip"]
 
@@ -47,12 +48,12 @@ class DataBaseManager():
     record_num = 0
 
     # ファイル複製スレッド
-    copy_progress = {
+    file_op_progress = {
         'task_num':0,
         'task_index':0,
         'title':'',
         'file_num':0,
-        'copied_file':0
+        'done_file':0
         }
     is_cancel = False
 
@@ -61,7 +62,7 @@ class DataBaseManager():
 
     dbm_thread_id = 0 
 
-    copy_tasks = []
+    file_op_tasks = []
     file_op_thread = threading.Thread() # ファイル操作用のスレッド
 
     def __init__(self):
@@ -158,12 +159,12 @@ class DataBaseManager():
         result = self.cursor.fetchall()
         return result[0][0]
 
-    def insert_records(self, records):
+    def insert_records(self, records, move_file=False):
         """
         概要:
             レコードを登録する。
-            登録のみでファイルの移動はせず、クラス内のcopy_tasksに追加される。
-            別途start_copyでコピータスクを実行する。
+            登録のみでファイルの移動はせず、クラス内のfile_op_tasksに追加される。
+            別途start_file_operationでコピータスクを実行する。
             本関数を小分けで使用してタスクを貯めてからまとめて実行もできるはず...
         引数:
             records: 下記の構造を持つ辞書のリスト
@@ -172,6 +173,7 @@ class DataBaseManager():
                     Title:登録タイトル（レコードの主キー、必須）
                     values_dict:{その他のカラム内容の辞書、任意}
                 }
+            move_file:コピーではなくファイルを移動する。
         返り値:
             err_info: 'title: エラー内容'のstringのリスト
         メモ:
@@ -182,10 +184,10 @@ class DataBaseManager():
             ・上書きができるようにすると色々と幅が広がる
                 - 上書きモードと追加モードなどなど
         """
-
+        op_mode = 'move' if move_file else 'copy'
         title_list = self.get_items('Title', convert=True)
 
-        self.copy_tasks = []
+        self.file_op_tasks = []
         
         err_info = []
         for info in records:
@@ -218,6 +220,10 @@ class DataBaseManager():
                 values_dict['Title'] = title
                 values_dict['FileNum'] = 0
                 values_dict['Size'] = 0.0
+                values_dict['Link'] = ''
+                values_dict['IsFavorite'] = 0
+                values_dict['favorite'] = []
+                values_dict['chapter'] = []
                 sql_tmp, sql_values = self._convert_dict4sql(values_dict)
                 sql = 'insert into MainTable {}'.format(sql_tmp)
                 self.logger.debug('{} {}'.format(sql, sql_values))
@@ -227,7 +233,8 @@ class DataBaseManager():
                 break
 
             # ファイルコピーのタスクを作成する
-            self.copy_tasks.append({
+            self.file_op_tasks.append({
+                'operation':op_mode,
                 'title':title,
                 'src_list':file_list,
                 'dst_path':os.path.join(self.data_dir, title),
@@ -244,12 +251,13 @@ class DataBaseManager():
         if len(file_list) == 0:
             return False
 
-        self.copy_tasks = []
+        self.file_op_tasks = []
 
         init_info = self.get_items(['FileNum','Size'], title=title)
 
         # ファイルコピーのタスクを作成する
-        self.copy_tasks.append({
+        self.file_op_tasks.append({
+            'operation':'copy',
             'title':title,
             'src_list':sorted(file_list),
             'dst_path':os.path.join(self.data_dir, title),
@@ -257,31 +265,6 @@ class DataBaseManager():
             'init_size':init_info[0][1]
             })
         
-        return True
-
-    def start_copy(self, move_file=False):
-        """
-        概要:
-            insert_recordsで発生したcopy_tasksを別スレッドで実行する。
-            レコード内容を更新するsqlをsql_tasksとして溜め込むため、コピー完了後にresolve_sql_tasksの実行が必要。
-            スレッドの生存は、file_op_is_aliveで確認できる。
-            コピーの進捗状況は、get_copy_progressで取得できる。
-        引数:
-            move_file:コピーではなくファイルを移動する。
-        返り値:
-            False：前のスレッドが生きている場合にFalseを返す。
-        メモ:
-            ・sqlが、cursorを取得したスレッドでしか実行できないので、タスクとしてためている。
-                - sqlの実施だけメインスレッドに帰ってきて実行とかできないだろうか...
-            ・キャンセル操作への対応
-        """
-
-        if self.file_op_thread.is_alive():
-            return False
-
-        self.file_op_thread = threading.Thread(target=self._copy_files, args=([move_file]),daemon=False)
-        self.file_op_thread.start()
-
         return True
 
     def delete_record(self, titles):
@@ -305,12 +288,154 @@ class DataBaseManager():
             self.logger.debug(sql)
             self.cursor.execute(sql)
 
-        self.file_op_thread = threading.Thread(target=self._delete_files, args=([titles]),daemon=False)
+        self.file_op_thread = threading.Thread(target=self._delete_titles, args=([titles]),daemon=False)
         self.file_op_thread.start()
 
         self.connection.commit()
 
         return True
+
+    def delete_files(self, title,file_idx):
+        """
+        概要:
+        引数:
+        返り値:
+        メモ:
+        """
+        if len(file_idx) == 0:
+            return False
+
+        self.file_op_tasks = []
+
+        init_info = self.get_items(['FileNum','Size','favorite','chapter'], title=title, convert=True)
+
+        init_favorite = []
+        for i in init_info['favorite'][0]:
+            if i.isdecimal():
+                init_favorite.append(int(i))
+        init_chapter = []
+        for i in init_info['chapter'][0]:
+            if i.isdecimal():
+                init_chapter.append(int(i))
+
+        # ファイルコピーのタスクを作成する
+        self.file_op_tasks.append({
+            'operation':'delete',
+            'title':title,
+            'src_list':sorted(file_idx),
+            'dst_path':os.path.join(self.data_dir, title),
+            'init_num':init_info['FileNum'][0][0],
+            'init_size':init_info['Size'][0][0],
+            'init_favorite': copy.deepcopy(init_favorite),
+            'init_chapter':copy.deepcopy(init_chapter)
+            })
+
+        return True
+
+    def start_file_operation(self):
+        """
+        概要:
+            insert_recordsで発生したfile_op_tasksを別スレッドで実行する。
+            レコード内容を更新するsqlをsql_tasksとして溜め込むため、コピー完了後にresolve_sql_tasksの実行が必要。
+            スレッドの生存は、file_op_is_aliveで確認できる。
+            コピーの進捗状況は、get_file_op_progressで取得できる。
+        引数:
+        返り値:
+            False：前のスレッドが生きている場合にFalseを返す。
+        メモ:
+            ・sqlが、cursorを取得したスレッドでしか実行できないので、タスクとしてためている。
+                - sqlの実施だけメインスレッドに帰ってきて実行とかできないだろうか...
+            ・キャンセル操作への対応
+        """
+
+        if self.file_op_thread.is_alive():
+            return False
+
+        self.file_op_thread = threading.Thread(target=self._run_file_operation,daemon=False)
+        self.file_op_thread.start()
+
+        return True
+
+    def sort_files(self, title,ref_index, insert_index):
+
+        if len(insert_index) == 0:
+            return
+
+        title_dir, file_list = self.get_file_list(title)
+        init_info = self.get_items(['favorite','chapter'], title=title, convert=True)
+
+        init_favorite = set([])
+        for i in init_info['favorite'][0]:
+            if i.isdecimal():
+                init_favorite.add(int(i))
+        init_chapter = set([])
+        for i in init_info['chapter'][0]:
+            if i.isdecimal():
+                init_chapter.add(int(i))
+
+        # 対象範囲のインデックスをすべて取得
+        tmp_set = set(insert_index) | set([ref_index])
+        trg_idx = set(range(min(tmp_set),max(tmp_set)+1))
+        # 入れ替え対象のインデックスを除く, リスト化して指定位置に挿入
+        new_order = sorted(trg_idx ^ insert_index)
+        ref_pos = new_order.index(ref_index)
+        new_order[ref_pos:ref_pos] = sorted(insert_index)
+
+        # ソート１ - 元ファイルをいったん別名にして避難しつつ、ファイル名変更タスクの作成
+        old_order = sorted(trg_idx)
+        sort_task = []
+        new_favorite = set([])
+        new_chapter = set([])
+        for i, old_idx in enumerate(new_order):
+
+            new_idx = old_order[i]
+            if old_idx == new_idx:
+                continue
+
+            if old_idx in init_favorite:
+                init_favorite.remove(old_idx)
+                new_favorite.add(new_idx)
+            if old_idx in init_chapter:
+                init_chapter.remove(old_idx)
+                new_chapter.add(new_idx)
+
+            fname = file_list[old_idx]
+            old_idx_str, ext = os.path.splitext(fname) # インデックスと拡張子に分解
+
+            old_path = os.path.join(title_dir, fname)
+            tmp_path = os.path.join(title_dir, '_' + fname)
+            os.rename(old_path, tmp_path)
+            #print('{} -> {}'.format(old_path, tmp_path))
+
+            new_idx_str = str(new_idx).zfill(self.FILE_NUMBER_OF_DIGITS)
+            new_path = os.path.join(title_dir, new_idx_str + ext)
+
+            sort_task.append((tmp_path, new_path))
+
+            if ext == '.zip':
+                old_thum_path = os.path.join(title_dir, '__thumbnail__', old_idx_str + '.png')
+                tmp_thum_path = os.path.join(title_dir, '__thumbnail__', '_' + old_idx_str + '.png')
+                os.rename(old_thum_path, tmp_thum_path)
+                #print('{} -> {}'.format(old_thum_path, tmp_thum_path))
+                
+                new_thum_path = os.path.join(title_dir, '__thumbnail__', new_idx_str + '.png')
+                sort_task.append((tmp_thum_path, new_thum_path))
+
+        # ソート２ - ファイル名変更の実施
+        for stask in sort_task:
+            os.rename(stask[0], stask[1])
+            #print('{} -> {}'.format(stask[0], stask[1]))
+
+        new_favorite |= init_favorite
+        new_chapter |= init_chapter
+
+        # データベースの情報変更
+        values_dict = {}
+        values_dict['favorite'] = sorted(new_favorite)
+        values_dict['chapter'] = sorted(new_chapter)
+        #print(values_dict)
+
+        self.update_record(title, values_dict=values_dict)
 
     def update_record(self, title, values_dict):
         """
@@ -360,67 +485,110 @@ class DataBaseManager():
         self.sql_tasks = []
         self.connection.commit()
 
-    def _copy_files(self, move_file=False):
+
+    def _run_file_operation(self):
 
         # TODO: 中断操作対応
 
-        self.copy_progress['task_num'] = len(self.copy_tasks)
+        self.file_op_progress['task_num'] = len(self.file_op_tasks)
 
-        for t_idx, ctask in enumerate(self.copy_tasks):
-
-            self.copy_progress['task_index'] = t_idx+1
+        for t_idx, ftask in enumerate(self.file_op_tasks):
 
             # 初期設定
+            op_mode = ftask['operation']
+            title = ftask['title']
+            trg_path = ftask['dst_path']
+            src_list = ftask['src_list']
+            idx_offset = ftask['init_num']
+            
             values_dict = {}
-            title = ctask['title']
-            dst_path = ctask['dst_path']
-            if not os.path.exists(dst_path):
-                os.mkdir(dst_path)
-            file_list = ctask['src_list']
+            values_dict['FileNum'] = ftask['init_num']
+            values_dict['Size'] = ftask['init_size']
 
-            values_dict['FileNum'] = ctask['init_num']
-            values_dict['Size'] = ctask['init_size']
-            idx_offset = ctask['init_num']
+            self.file_op_progress['task_index'] = t_idx+1
+            self.file_op_progress['title'] = title
+            self.file_op_progress['file_num'] = len(src_list)
+            self.file_op_progress['done_file'] = 0
 
-            self.copy_progress['title'] = title
-            self.copy_progress['file_num'] = len(file_list)
-            self.copy_progress['copied_file'] = 0
+            if op_mode in ['move', 'copy']:
 
-            for i, file_path in enumerate(file_list):
-                 
-                _, ext = os.path.splitext(file_path)
-                #print(type(ext), ext)
+                if not os.path.exists(trg_path):
+                    os.mkdir(trg_path)
 
-                new_name = str(i + idx_offset).zfill(5)
-                new_path = os.path.join(dst_path, new_name)
+                for i, file_path in enumerate(src_list):
+                    _, ext = os.path.splitext(file_path)
+                    new_name = str(i + idx_offset).zfill(self.FILE_NUMBER_OF_DIGITS)
+                    new_path = os.path.join(trg_path, new_name)
+                    if ext == '.gif':
+                        thum_dir = os.path.join(trg_path, '__thumbnail__')
+                        if not os.path.exists(thum_dir):
+                            os.mkdir(thum_dir)
+                        self._gif_to_zip(file_path, new_path, thum_dir)
+                        values_dict['Size'] += (os.path.getsize(new_path + '.zip') / (1024*1024))
+                    else:
+                        # TODO: 上書き操作は仮で禁止にしている
+                        new_path = new_path + ext
+                        if not os.path.exists(new_path):
+                            if op_mode == 'move':
+                                shutil.move(file_path, new_path)
+                            elif op_mode == 'copy':
+                                shutil.copyfile(file_path, new_path)
+                        values_dict['Size'] += (os.path.getsize(new_path) / (1024*1024))
+                    values_dict['FileNum'] += 1
+                    self.file_op_progress['done_file'] += 1
+                values_dict['Updated'] = datetime.datetime.now()
 
-                if ext == '.gif':
-                    thum_dir = os.path.join(dst_path, '__thumbnail__')
-                    if not os.path.exists(thum_dir):
-                        os.mkdir(thum_dir)
-                    self._gif_to_zip(file_path, new_path, thum_dir)
-                    values_dict['Size'] += os.path.getsize(new_path + '.zip')
-                else:
-                    # TODO: 上書き操作は仮で禁止にしている
-                    new_path = new_path + ext
-                    if not os.path.exists(new_path):
-                        if move_file:
-                            shutil.move(file_path, new_path)
-                        else:
-                            shutil.copyfile(file_path, new_path)
-                    values_dict['Size'] += os.path.getsize(new_path)
-                values_dict['FileNum'] += 1
-                self.copy_progress['copied_file'] += 1
+            elif op_mode == 'delete':
 
-            values_dict['Size'] /= (1024*1024) # MB変換
-            values_dict['Updated'] = datetime.datetime.now()
+                # deleteの場合はindexのリストが渡されている想定
+                # renameも兼ねるため、結局trg_path内を全探索する
+
+                title_dir, file_list = self.get_file_list(title)
+                
+                new_favorite = []
+                new_chapter = []
+                count_new_idx = 0
+                for i, fname in enumerate(file_list):
+
+                    idx_str, ext = os.path.splitext(fname) # インデックスと拡張子に分解
+                    idx = int(idx_str)
+
+                    fpath = os.path.join(title_dir, fname)
+
+                    if ext == '.zip':
+                        thum_name = idx_str + '.png'
+                        thum_path = os.path.join(title_dir, '__thumbnail__', thum_name)
+
+                    if idx in src_list:
+                        fsize = os.path.getsize(fpath) / (1024*1024)
+                        os.remove(fpath)
+                        if ext == '.zip':
+                            os.remove(thum_path)
+                        values_dict['FileNum'] -= 1
+                        values_dict['Size'] -= fsize
+                        self.file_op_progress['done_file'] += 1
+                    else:
+                        if idx != count_new_idx:
+                            new_idx_str = str(count_new_idx).zfill(self.FILE_NUMBER_OF_DIGITS)
+                            new_path = os.path.join(title_dir, new_idx_str + ext)
+                            os.rename(fpath, new_path)
+                            if ext == '.zip':
+                                new_thum_path = os.path.join(title_dir, '__thumbnail__', new_idx_str + '.png')
+                                os.rename(thum_path, new_thum_path)
+                        if idx in ftask['init_favorite']:
+                            new_favorite.append(count_new_idx)
+                        if idx in ftask['init_chapter']:
+                            new_chapter.append(count_new_idx)
+                        count_new_idx += 1
+                    
+                values_dict['favorite'] = sorted(new_favorite)
+                values_dict['chapter'] = sorted(new_chapter)
 
             # データベース情報更新
             self.update_record(title, values_dict=values_dict)
-
             self.logger.debug('Copy Operation Finished')
 
-    def _delete_files(self, titles):
+    def _delete_titles(self, titles):
 
         for title in titles:
             del_path = os.path.join(self.data_dir, title)
@@ -432,8 +600,8 @@ class DataBaseManager():
     def file_op_is_alive(self):
         return self.file_op_thread.is_alive()
 
-    def get_copy_progress(self):
-        return copy.deepcopy(self.copy_progress)
+    def get_file_op_progress(self):
+        return copy.deepcopy(self.file_op_progress)
 
     def get_items(self, col_name, title=None, convert=False):
         """
@@ -454,24 +622,26 @@ class DataBaseManager():
             sql += ' WHERE Title="{}"'.format(title)
 
         self.logger.debug(sql)
-        ret = self.cursor.execute(sql)
+        self.cursor.execute(sql)
+
+        result = self.cursor.fetchall()
 
         if convert:
             if type(col_name) is list:
                 tmp_dict = {}
                 for cl in col_name:
                     tmp_dict[cl] = []
-                for row in ret.fetchall():
+                for row in result:
                     for i, cl in enumerate(col_name):
                         tmp_dict[cl].append(self._convert_list(row[i]))
                 return tmp_dict
             elif type(col_name) is str:
                 tmp_list = []
-                for row in ret.fetchall():
+                for row in result:
                     tmp_list += self._convert_list(row[0])
                 return tmp_list
         else:
-            return ret.fetchall()
+            return result
 
     def get_titles(self, filter_option={}, init_chars=[], enable_or=False):
 
@@ -506,21 +676,21 @@ class DataBaseManager():
 
         return title_list
 
-    def get_image_list(self, title):
+    def get_file_list(self, title):
 
-        image_dir = os.path.join(self.data_dir, title)
+        file_dir = os.path.join(self.data_dir, title)
 
-        if not os.path.exists(image_dir):
+        if not os.path.exists(file_dir):
             return '', []
 
         #登録時に拡張子はフィルタされるのでファイルすべてを取得しているが、早くなるかは不明
-        #tmp_list = sorted(glob.glob(os.path.join(image_dir, "*")))
-        #image_list = [os.path.basename(r) for r in tmp_list]
+        #tmp_list = sorted(glob.glob(os.path.join(file_dir, "*")))
+        #file_list = [os.path.basename(r) for r in tmp_list]
 
-        tmp_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(image_dir, "*." + ext)) for ext in self.SUPPORTED_EXT])))
-        image_list = [os.path.basename(r) for r in tmp_list]
+        tmp_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(file_dir, "*." + ext)) for ext in self.SUPPORTED_EXT])))
+        file_list = [os.path.basename(r) for r in tmp_list]
 
-        return image_dir, image_list
+        return file_dir, file_list
 
 
     # 追加項目操作
@@ -844,36 +1014,5 @@ class DataBaseManager():
             f.save(name)
             break
         """
-
-        #frames = self._get_gif_frames(src_gif)
-        #self._write_gif_frames(frames, src_gif, dst_dir)
         shutil.make_archive(dst_dir, 'zip', dst_dir)
         shutil.rmtree(dst_dir)
-
-    def _get_gif_frames(self, path):
-        '''パスで指定されたファイルのフレーム一覧を取得する
-        '''
-        im = Image.open(path)
-        return (frame.copy() for frame in ImageSequence.Iterator(im))
-
-    def _write_gif_frames(self, frames, name_original, destination):
-        '''フレームを別個の画像ファイルとして保存する
-        '''
-        path = Path(name_original)
-
-        stem = path.stem
-        extension = path.suffix
-
-        # 出力先のディレクトリが存在しなければ作成しておく
-        dir_dest = Path(destination)
-        
-        if not dir_dest.is_dir():
-            dir_dest.mkdir(0o700)
-            #print('Destionation directory is created: "{}".'.format(destination))
-
-
-        for i, f in enumerate(frames):
-            idx = str(i+1).zfill(3)
-            name = '{}/{}-{}{}'.format(destination, stem, idx, extension)
-            f.save(name)
-            #print('A frame is saved as "{}".'.format(name))
