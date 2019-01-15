@@ -1,13 +1,10 @@
 #-*- coding: utf-8 -*-
 import os, sys, logging
-
-import pathlib, glob, time, math, threading, json, copy, webbrowser
+import pathlib, glob, time, math, threading, json, copy, webbrowser, shutil
 from functools import partial
 from itertools import chain
 
 from kivy.config import Config
-#Config.set('graphics', 'width', '1024')
-#Config.set('graphics', 'height', '768')
 from kivy.app import App
 from kivy.core.window import Window
 from kivy.factory import Factory
@@ -22,6 +19,7 @@ from kivy.uix.boxlayout import BoxLayout
 from kivy.uix.stacklayout import StackLayout
 from kivy.uix.gridlayout import GridLayout
 from kivy.uix.anchorlayout import AnchorLayout
+from kivy.uix.scrollview import ScrollView
 from kivy.uix.popup import Popup
 from kivy.uix.button import Button
 from kivy.uix.togglebutton import ToggleButton
@@ -36,7 +34,45 @@ from kivy.uix.spinner import Spinner
 import fonts_ja
 import databasemanager
 
-#logging.config.fileConfig(os.path.join(os.path.dirname(__file__), 'config', 'logging.conf'))
+# アプリ内で動的にインスタンスを取得したいものは、
+# set_widget.kvに基本的なレイアウトを記述してクラス化する。
+# set_widget.kvはmydatabaseapp.kvでimportされている。
+# クラス定義の順序は、pythonファイル -> kvファイルの順序だと思っている。
+# TODO: もっと整理したいが、上手い記述の仕方がわからない
+
+# ベースアイテム
+class MyCheckBox(BoxLayout):
+    text = StringProperty()
+class ScrollStack(ScrollView):
+    pass
+
+# DataBaseList用
+class DBInfo(BoxLayout):
+    title = StringProperty()
+    data_num = NumericProperty()
+    data_size = StringProperty()
+
+# DataBaseItemsView用
+class DBItem(BoxLayout):
+    title = StringProperty()
+    filenum = NumericProperty()
+    is_favorite = BooleanProperty()
+class NewEntryLayout(BoxLayout):
+    pass
+class TagEditItem(BoxLayout):
+    text = StringProperty()
+class TagEditLayout(BoxLayout):
+    title = StringProperty()
+
+# ThumbnailView用
+class Thumbnail(BoxLayout):
+    im_index = NumericProperty()
+class ThumbnailJump(Button):
+    pass
+class JumpPopUp(BoxLayout):
+    pass
+
+# 汎用PopUp
 class YesNoPopUp(BoxLayout):
     """ポップアップのコンテンツ部分
  
@@ -47,41 +83,28 @@ class YesNoPopUp(BoxLayout):
     subtext = StringProperty()
     yes = ObjectProperty(None)
     no = ObjectProperty(None)
-
+class SimpleYesNoPopUp(BoxLayout):
+    """ポップアップのコンテンツ部分
+ 
+    YesNoPopUp(yes=self.yes1, no=self.no, text='popup1')
+    のように使い、Yesボタン、Noボタンと紐づけたい関数を渡し、textには表示したい文字列を渡してください。
+    """
+    text = StringProperty()
+    yes = ObjectProperty(None)
+    no = ObjectProperty(None)
+class OptionalPopUp(BoxLayout):
+    text = StringProperty()
+    cbtext = StringProperty()
+    yes = ObjectProperty(None)
+    no = ObjectProperty(None)
 class SimplePopUp(BoxLayout):
     text = StringProperty()
     close = ObjectProperty(None)
-
 class ProgressPopUp(BoxLayout):
     pass
 
-class DBItem(BoxLayout):
-    title = StringProperty()
-    filenum = NumericProperty()
-    is_favorite = BooleanProperty()
-    #fa_source = 'data/icons/star.png'
 
-class JumpPopUp(BoxLayout):
-    pass
-
-class FilterItem(BoxLayout):
-    text = StringProperty()
-
-class TagEditItem(BoxLayout):
-    text = StringProperty()
-
-class ThumbnailJump(Button):
-    pass
-    
-class ImageButton(ButtonBehavior, Image):
-    pass
-
-class NewEntryLayout(BoxLayout):
-    pass
-
-class TagEditLayout(BoxLayout):
-    title = StringProperty()
-
+# Screen
 class DataBaseScreen(Screen):
     fullscreen = BooleanProperty(True)
 
@@ -112,6 +135,7 @@ class MyDataBaseApp(App):
     
     CURRENT_DIR = os.path.dirname(__file__)
     HEADER_OPT_COLOR = [0.128, 0.128, 0.128, 1]
+    TRANSITION_SPEED = .4
     NO_IMAGE = StringProperty('data/noimage.png')
     IC_FILTER_MAP = {
         'あ':['あ','い','う','え','お'],
@@ -130,20 +154,39 @@ class MyDataBaseApp(App):
         'お気に入り':'favorite',
         'チャプター':'chapter'
     }
+    APP_TITLE = 'MyDataBaseApp'
+    APP_SCREENS = [
+        'DataBaseList',
+        'DataBaseItemsView',
+        'ThumbnailView',
+        'ImageView'
+    ]
+    SCREEN_TITLES = [
+        'データベース一覧',
+        'データ一覧',
+        'サムネイルビュー',
+        'イメージビューワー'
+    ]
+    DATABASE_LIST = 'database.json'
 
     # TODO: 設定項目 - 後々、設定ファイルから読み込むようにする
     max_thumnail = 50 # 配置する最大サムネイル数
     max_jump_button = 9 # 配置するジャンプボタン数
     view_size = NumericProperty(1)
-    animation_speed = .4
     gif_speed = NumericProperty(0.05)
+    save_view_setting = False # 前回設定の保存
 
     # ヘッダー・フッターメニュー用
     screen_title = StringProperty()
     hide_menu = BooleanProperty(False)
     item_select_mode = 'normal' # normal:画像ビューへ, select:選択, favorite:お気に入り選択、chapter:チャプター選択
 
+    # DataBaseList用
+    db_list = {}
+
     # DataBaseItemView用
+    db_title = ''
+
     popup_mode = 'close'
 
     op_is_active = False
@@ -201,33 +244,24 @@ class MyDataBaseApp(App):
     # thread
     threads = {}
 
-    def __del__(self):
-        self.logger.debug('---------END MyDataBaseApp--------')
-
     def build(self):
 
         self.logger.debug('---------Start MyDataBaseApp--------')
-        #logging.debug('Start MyDataBaseApp')
-
-        self.title = 'MyDataBase'
+        self.title = self.APP_TITLE
 
         Window.bind(on_dropfile = self._on_drop_files)
 
         sm = self.root.ids.sm
 
-        # DataBaseItemsViewのテンプレート読み込み
-        sm.add_widget(self._load_template('DataBaseItemsView'))
-        
-        # ThumbnailViewのテンプレート読み込み
-        sm.add_widget(self._load_template('ThumbnailView'))
+        # テンプレートをあらかじめ読み込み
+        for sn in self.APP_SCREENS:
+            sm.add_widget(self._load_template('screen', sn))
+
+        # 別スレッドの生成
         self.threads['load_thumbnails'] = threading.Thread()
 
-        # ImageViewのテンプレート読み込み
-        sm.add_widget(self._load_template('ImageView'))
-
-
         # 頭文字選択用のレイアウトの作成
-        sip_layout = self._load_template('SelectInitial')
+        sip_layout = self._load_template('popup','SelectInitial')
         char_list = [
             ['あ','い','う','え','お'],
             ['か','き','く','け','こ'],
@@ -251,7 +285,6 @@ class MyDataBaseApp(App):
                 tmp_layout.add_widget(tmp_btn)
             sip_layout.ids.ic.add_widget(tmp_layout)
         self.ic_popup = Popup(title='頭文字選択', content=sip_layout, size_hint=(None, None), size=(700, 300), auto_dismiss=True)
-        #self.ic_popup = Popup(title='頭文字選択', content=sip_layout, auto_dismiss=True)
 
         # キーボードバインディング
         self._keyboard = Window.request_keyboard(self._keyboard_closed, self.root, 'text')
@@ -261,7 +294,10 @@ class MyDataBaseApp(App):
             pass
         self._keyboard.bind(on_key_down=self._on_keyboard_down)
 
-        #self.go_databaseitemsview()
+        # データベースクラスのインスタンス取得
+        self.dbm = databasemanager.DataBaseManager() 
+
+        self.reload_db_list()
 
     def close_popup(self):
         self.popup.dismiss()
@@ -270,9 +306,22 @@ class MyDataBaseApp(App):
     def close_confirm_popup(self):
         
         if self.task_remain:
+            
+            # sqlタスクの実行
             self.dbm.resolve_sql_tasks()
+            
+            # DataBaseListの更新
+            if self.db_title in self.db_list.keys():
+                num, sum_size = self.dbm.get_db_info()
+                self.db_list[self.db_title]['size'] = sum_size
+                self.db_list[self.db_title]['num'] = num
+                self._save_db_list()
+                self.reload_db_list()
+
+            # DataBaseItemsViewの更新
             self.reload_db_items()
 
+            # ThumbnailViewの更新
             sm = self.root.ids.sm
             if sm.current == 'ThumbnailView':
                 if self.reload_data():
@@ -303,26 +352,39 @@ class MyDataBaseApp(App):
     def change_mode(self, mode):
 
         self.item_select_mode = mode
+        option_layout = self.root.ids.additional_option
+        option_layout.clear_widgets()
 
-        if self.root.ids.sm.current == 'DataBaseItemsView':
-            option_layout = self.root.ids.additional_option
+        if self.root.ids.sm.current == 'DataBaseList':
+            if mode == 'select':
+                height = 40
+                tmp_button = Button(text='削除',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
+                tmp_button.bind(on_release=self.delete_database)
+                option_layout.add_widget(tmp_button)
+
+                tmp_button = Button(text='複製',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
+                tmp_button.bind(on_release=self.copy_database)
+                option_layout.add_widget(tmp_button)
+            else:
+                height = 0
+
+            Animation(height=height, d=.3, t='out_quart').start(option_layout)
+
+        elif self.root.ids.sm.current == 'DataBaseItemsView':
             
             if mode == 'select':
                 height = 40
-                option_layout.clear_widgets()
                 tmp_button = Button(text='削除',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
                 tmp_button.bind(on_release=self.delete_db_items)
                 option_layout.add_widget(tmp_button)
             elif mode == 'tag':
                 height = 40
-                option_layout.clear_widgets()
-
                 tmp_button = Button(text='タグ登録',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
                 tmp_button.bind(on_release=self.open_tag_setting)
                 option_layout.add_widget(tmp_button)
 
                 tmp_button2 = Button(text='CSV出力',size_hint_x=None,width=90, background_color=self.HEADER_OPT_COLOR)
-                #tmp_button2.bind(on_release=self.open_tag_setting)
+                tmp_button2.bind(on_release=self.backup_tag)
                 option_layout.add_widget(tmp_button2)
 
                 tmp_button3 = Button(text='CSV読込み',size_hint_x=None,width=100, background_color=self.HEADER_OPT_COLOR)
@@ -331,7 +393,6 @@ class MyDataBaseApp(App):
 
             elif mode == 'favorite':
                 height = 40
-                option_layout.clear_widgets()
                 tmp_txt = 'フィルタOFF' if self.db_filter['is_favorite'] else 'フィルタON'
                 tmp_button = ToggleButton(text=tmp_txt,size_hint_x=None,width=120, background_color=self.HEADER_OPT_COLOR)
                 tmp_button.state = 'down' if self.db_filter['is_favorite'] else 'normal'
@@ -339,16 +400,13 @@ class MyDataBaseApp(App):
                 option_layout.add_widget(tmp_button)
             else:
                 height = 0
-                option_layout.clear_widgets()
 
             Animation(height=height, d=.3, t='out_quart').start(option_layout)
 
         elif self.root.ids.sm.current == 'ThumbnailView':
-            option_layout = self.root.ids.additional_option
                             
             if mode in ['select', 'favorite', 'chapter']:
                 height = 40
-                option_layout.clear_widgets()
 
                 reset_button = Button(text='全解除',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
                 reset_button.bind(on_release=self.reset_file_options)
@@ -371,7 +429,6 @@ class MyDataBaseApp(App):
             else:
                 self.selected_file_index = set([])
                 height = 0
-                option_layout.clear_widgets()
                 self._update_all_thumbnail_color()
 
             Animation(height=height, d=.3, t='out_quart').start(option_layout)
@@ -380,22 +437,23 @@ class MyDataBaseApp(App):
     def go_previous_screen(self):
 
         sm = self.root.ids.sm
-        if sm.current == 'ThumbnailView':
-            self.screen_title = 'データベース内容'
-            self._wait_cancel()
-            sm.transition = SlideTransition(direction='right', duration=self.animation_speed)
-            sm.current = 'DataBaseItemsView'
-            self._reset_mode()
-            return
+        sm_cur = sm.current
+        sm_idx = self.APP_SCREENS.index(sm_cur)
 
-        if sm.current == 'ImageView':
-            self.screen_title = 'サムネイルビュー'
-            if self.hide_menu:
+        if sm_idx != 0:
+            prev_idx = sm_idx - 1
+
+            # ThumbnailViewでは、サムネイル描画を止める
+            if sm_cur == 'ThumbnailView':
+                self._wait_cancel()
+            # ImageViewでは、フルスクリーンビューを解除する。
+            if (sm_cur == 'ImageView') & self.hide_menu:
                 self.change_view_fullscreen()
-            sm.transition = SlideTransition(direction='right', duration=self.animation_speed)
-            sm.current = 'ThumbnailView'
+
             self._reset_mode()
-            return
+            sm.transition = SlideTransition(direction='right', duration=self.TRANSITION_SPEED)
+            self.screen_title = self.SCREEN_TITLES[prev_idx]
+            sm.current = self.APP_SCREENS[prev_idx]
 
 
     # フィルタ機能
@@ -407,7 +465,7 @@ class MyDataBaseApp(App):
             return
 
         #ポップアップ構造のテンプレート読み込み
-        content = self._load_template('FilterPopUp')
+        content = self._load_template('popup', 'FilterPopUp')
         tp = content.ids.tp
         tp.clear_tabs()
 
@@ -420,19 +478,21 @@ class MyDataBaseApp(App):
             for key, val_list in sorted(tag_list.items(), key=lambda x:x[0]):
                 #tp_item = TabbedPanelItem(text=key)
                 th = TabbedPanelHeader(text=key)
-                filter_items = self._load_template('FilterItems')
+                #filter_items = self._load_template('MyCheckBoxs')
+                filter_items = ScrollStack()
                 for val in val_list:
                     #print('{0} - {1}'.format(key, val))
-                    filter_items.ids.fi.add_widget(FilterItem(text=val))
-                    #filter_items.add_widget(FilterItem(text=val))
+                    filter_items.ids.fi.add_widget(MyCheckBox(text=val))
+                    #filter_items.add_widget(MyCheckBox(text=val))
                 th.content = filter_items
                 tp.add_widget(th)
 
         elif sm.current == 'ThumbnailView':
             th = TabbedPanelHeader(text='その他')
-            filter_items = self._load_template('FilterItems')
-            filter_items.ids.fi.add_widget(FilterItem(text='お気に入り'))
-            filter_items.ids.fi.add_widget(FilterItem(text='チャプター'))
+            #filter_items = self._load_template('MyCheckBoxs')
+            filter_items = ScrollStack()
+            filter_items.ids.fi.add_widget(MyCheckBox(text='お気に入り'))
+            filter_items.ids.fi.add_widget(MyCheckBox(text='チャプター'))
             th.content = filter_items
             tp.add_widget(th)
 
@@ -522,7 +582,8 @@ class MyDataBaseApp(App):
 
             if self.popup_mode == 'file_entry':
                 if os.path.isdir(path):
-                    file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(path, "*." + ext)) for ext in self.dbm.SUPPORTED_EXT])))
+                    #file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(path, "*." + ext)) for ext in self.dbm.SUPPORTED_EXT])))
+                    file_list = self.dbm.search_files(path)
                     for fl in file_list:
                         self.add_file_entry(fl)
                 elif os.path.isfile(path):
@@ -533,46 +594,209 @@ class MyDataBaseApp(App):
         return
 
 
-    # DataBaseItemsViewイベント
-    def go_databaseitemsview(self, db_root=None):
-        
-        # インスタンス取得
-        self.dbm = databasemanager.DataBaseManager() 
+    # DataBaseListイベント
+    def reload_db_list(self):
 
+        db_info_path = os.path.join(self.CURRENT_DIR, self.DATABASE_LIST)
+        if os.path.exists(db_info_path):
+            with open(os.path.join(self.CURRENT_DIR, self.DATABASE_LIST), 'r', encoding='utf-8') as db_info_file:
+                self.db_list  = json.load(db_info_file)
+                self.logger.debug('read db_list -> {}'.format(self.db_list))
+
+        screen = self.root.ids.sm.get_screen('DataBaseList')
+        db_list_layout = screen.ids.db_list
+        db_list_layout.clear_widgets()
+        for key, info in self.db_list.items():
+            size_str = '{:.1f}'.format(info['size'])
+            db_list_layout.add_widget(DBInfo(title=key, data_num=info['num'], data_size=size_str))
+        
+    def create_database(self):
+        # ポップアップから、タイトル、パス、オプションタグ種別、タグ登録可能数を取得
+        content = self._load_template('popup', 'DBCreate')
+        self.popup = Popup(title="データベース作成", content=content, size_hint=(None, None), size=(800, 400), auto_dismiss=False)
+        self.popup.open()
+
+    def run_create_database(self, title, path, tag_types_s, max_asigns_s):
+
+        err_msg = []
+
+        if title == '':
+            err_msg.append('Titleを入力してください')
+        else:
+            if title in self.db_list.keys():
+                err_msg.append('同名のデータベースがあります')
+
+        if path == '':
+            err_msg.append('Pathを入力してください')
+        elif not os.path.exists(path):
+            err_msg.append('不正なパスです')
+        elif self.dbm.database_is_exist(path):
+            err_msg.append('既に他のデータベースが存在します')
+        
+        db_option = {}
+        if tag_types_s != '':
+            tag_types = tag_types_s.split(',')
+            max_asigns = max_asigns_s.split(',')
+            if len(tag_types) != len(max_asigns):
+                err_msg.append('タグ種別と最大登録数の要素数を一致させてください')
+            else:
+                try:
+                    for i, tt in enumerate(tag_types):
+                        if tt == '':
+                            err_msg.append('タグ種別は空欄にできません')
+                            break
+                        elif tt in db_option.keys():
+                            err_msg.append('タグ種別が重複しています')
+                            break
+                        db_option[tt] = ('text', int(max_asigns[i]))
+                except:
+                    err_msg.append('最大登録数: 1以上の整数にしてください')
+
+        if len(err_msg) != 0:
+            content = SimplePopUp(text='\n'.join(err_msg), close=self.close_confirm_popup)
+            self.c_popup = Popup(title="エラー", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+        else:
+            self.close_popup()
+
+            self.dbm.create_database(path, option=db_option)
+            content = SimplePopUp(text='データベースを作成しました'.join(err_msg), close=self.close_confirm_popup)
+            self.c_popup = Popup(title="完了", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+            
+            self.db_list[title] = {
+                'path':path,
+                'num':0,
+                'size':0
+            }
+            self._save_db_list() 
+            self.reload_db_list()
+            
+        self.c_popup.open()
+        
+        return
+
+    def load_exist_database(self):
+        # ポップアップから、パスを取得、データベース情報の読み込み
+        pass
+
+    def select_database(self, instance):
+        if self.item_select_mode == 'normal':
+            self.db_title = instance.title
+            self.go_databaseitemsview()
+
+        elif self.item_select_mode == 'select':
+            instance.is_selected ^= True
+
+    def delete_database(self, instance):
+
+        self.selected_db = self._get_selected_db()
+        if len(self.selected_db) == 0:
+            return
+
+        # 確認画面
+        msg = '選択中のデータベースを削除します。\nよろしいですか？'
+        content = OptionalPopUp(text=msg, cbtext='全データ削除', yes=self.run_delete_database, no=self.close_confirm_popup)
+        self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=False)
+        self.c_popup.open()
+        
+        return
+
+    def run_delete_database(self):
+
+        # TODO：時間がかかると嫌なので、今は使っていない
+        delete_all = self.c_popup.content.ids.mcb.ids.cb.active
+
+        # データベースから解除
+        for di in self.selected_db:
+
+            if delete_all:
+                pass
+                #trg_dir = self.db_list['path']
+                #shutil.rmtree(trg_dir)
+                #os.mkdir(trg_dir)
+            self.db_list.pop(di)
+
+        self.close_confirm_popup()
+
+    def copy_database(self, instance):
+        pass
+
+    def run_copy_database(self):
+        pass
+
+
+    def _save_db_list(self):
+        fname = os.path.join(self.CURRENT_DIR, self.DATABASE_LIST)
+        with open(fname, 'w') as wfile:
+            json.dump(self.db_list, wfile)
+
+    def _get_selected_db(self):
+        # ビューの設定
+        sm = self.root.ids.sm
+        screen = sm.get_screen('DataBaseList')
+
+        # 削除対象の一覧を取得
+        tmp_list = []
+        for child in screen.ids.db_list.children:
+            if child.is_selected:
+                tmp_list.append(child.title)
+
+        return tmp_list
+
+
+    # DataBaseItemsViewイベント
+    def go_databaseitemsview(self):
+
+        try:
+            self.dbm.close()
+        except:
+            pass
+
+        db_root = self.db_list[self.db_title]['path']
+
+        if self.dbm.database_is_exist(db_root):
+            self.db_tags = self.dbm.connect_database(db_root)
+        else:
+            content = SimplePopUp(text='データベースが見つかりません', close=self.close_confirm_popup)
+            self.c_popup = Popup(title="エラー", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+            self.c_popup.open()
+            return
+
+        """
         # TODO: 実際には、データベース作成機能が付く
         db_root = os.path.join(self.CURRENT_DIR,'data', '__tmp__', 'testDB')
         if not os.path.exists(db_root):
             os.makedirs(db_root, exist_ok=True)
 
-        self.db_root = db_root
-        if not self.dbm.connect_database(self.db_root):
+        db_root = db_root
+        if not self.dbm.connect_database(db_root):
             additional_tags = {
                 'タイプ': 'text',
                 'ジャンル': 'text',
                 'Misc': 'text'
             }
-            self.dbm.create_database(self.db_root,additional_tags=additional_tags)
+            self.dbm.create_database(db_root,additional_tags=additional_tags)
 
             db_tags = {
                 'タイプ': 1,
                 'ジャンル': 1,
                 'Misc': 2
             }
-            tag_file = open(os.path.join(self.db_root, 'tags.json'), 'w')
+            tag_file = open(os.path.join(db_root, 'tags.json'), 'w')
             json.dump(db_tags, tag_file)
             tag_file.close()
         # TODO: ここまで前機能
 
         # 各タグの最大登録数はjsonファイルに記録しておく
-        tag_file = open(os.path.join(self.db_root, 'tags.json'), 'r')
+        tag_file = open(os.path.join(db_root, 'tags.json'), 'r')
         self.db_tags  = json.load(tag_file)
         self.logger.debug('read {} -> {}'.format(tag_file, self.db_tags))
+        """
 
         self.reload_db_header()
         self.reload_db_items()
         
         sm = self.root.ids.sm
-        sm.transition = SlideTransition(direction='left', duration=self.animation_speed)
+        sm.transition = SlideTransition(direction='left', duration=self.TRANSITION_SPEED)
         sm.current = 'DataBaseItemsView'
         self.screen_title = 'データベース内容'
 
@@ -728,8 +952,8 @@ class MyDataBaseApp(App):
 
         # 確認画面
         msg = '削除します。よろしいですか？'
-        msg_lines = ['-----Titles-----'] + self.del_title
-        content = YesNoPopUp(text=msg, subtext='\n'.join(msg_lines), yes=self.start_delete, no=self.close_confirm_popup)
+
+        content = YesNoPopUp(text=msg, subtext='\n'.join(self.del_title), yes=self.start_delete, no=self.close_confirm_popup)
         self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(400, 400), auto_dismiss=False)
         self.c_popup.open()
         
@@ -755,7 +979,7 @@ class MyDataBaseApp(App):
             return
 
         #ポップアップ構造のテンプレート読み込み
-        content = self._load_template('TagPopUp')
+        content = self._load_template('popup','TagPopUp')
         tp = content.ids.tp
         tp.clear_tabs()
 
@@ -768,10 +992,11 @@ class MyDataBaseApp(App):
         for key, val_list in sorted(tag_list.items(), key=lambda x:x[0]):
             #tp_item = TabbedPanelItem(text=key)
             th = TabbedPanelHeader(text=key)
-            filter_items = self._load_template('FilterItems')
+            #filter_items = self._load_template('MyCheckBoxs')
+            filter_items = ScrollStack()
             for val in val_list:
                 #print('{0} - {1}'.format(key, val))
-                #filter_items.ids.fi.add_widget(FilterItem(text=val))
+                #filter_items.ids.fi.add_widget(MyCheckBox(text=val))
                 filter_items.ids.fi.add_widget(TagEditItem(text=val))
             
             th.content = filter_items
@@ -822,7 +1047,7 @@ class MyDataBaseApp(App):
             tim = self.popup.content.im_source
 
         if self.dbm.add_tag(table, (tn,ic, li,tim)):
-            #tp.current_tab.content.ids.fi.add_widget(FilterItem(text=tag_name))
+            #tp.current_tab.content.ids.fi.add_widget(MyCheckBox(text=tag_name))
             tp.current_tab.content.ids.fi.add_widget(TagEditItem(text=tn))
             self._clear_tag_info()
         else:
@@ -933,7 +1158,7 @@ class MyDataBaseApp(App):
 
     def open_tag_edit(self, title):
 
-        content = self._load_template('TagEdit')
+        content = self._load_template('popup','TagEdit')
         content.sp_values = sorted(list(self.db_tags.keys()))
 
         # テンプレート情報の読み取り
@@ -1025,11 +1250,24 @@ class MyDataBaseApp(App):
         return
 
 
+    def backup_tag(self,instance):
+        self.dbm.tag_backup()
+
+        content = SimplePopUp(text='タグを保存しました', close=self.close_confirm_popup)
+        self.c_popup = Popup(title="完了", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+        self.c_popup.open()
+
+    def load_tag(self,instance):
+        # 一応バックアップ保存
+        # TODO: どうしようかなと
+        pass
+
+
     # データ登録ポップアップでのイベント
     def open_entry_popup(self):
         self.popup_mode = 'data_entry'
 
-        content = self._load_template('DataEntry')
+        content = self._load_template('popup', 'DataEntry')
         content.sp_values = sorted(list(self.db_tags.keys()))
         self.popup = Popup(title='データ登録', content=content, size_hint=(None, None), size=(900, 760), auto_dismiss=False)
         self.popup.open()
@@ -1099,6 +1337,8 @@ class MyDataBaseApp(App):
             if (path == '') | (title == '') | (ichar == ''):
                 except_msg.append('{} : 未入力の必須項目があります'.format(th.text))
                 continue
+            elif not os.path.exists(path):
+                except_msg.append('{} : 不正なパスです'.format(th.text))
 
             if self.dbm.title_is_exist(title):
                 except_msg.append('{} : 同名タイトルが登録済みです'.format(th.text))
@@ -1180,7 +1420,7 @@ class MyDataBaseApp(App):
 
         self.screen_title = 'サムネイルビュー'
         sm = self.root.ids.sm
-        sm.transition = SlideTransition(direction='left', duration=self.animation_speed)
+        sm.transition = SlideTransition(direction='left', duration=self.TRANSITION_SPEED)
         sm.current = 'ThumbnailView'
 
         self.reload_thumbnailview()
@@ -1398,10 +1638,11 @@ class MyDataBaseApp(App):
             while(self.loading_thumbnail):
                 pass
             
-            thumbnail = self._load_template('Thumbnail')
-            thumbnail.im_index = self.view_file_index[idx]
+            #thumbnail = self._load_template('Thumbnail')
+            #thumbnail.im_index = self.view_file_index[idx]
+            #screen.ids.thumbnails.add_widget(thumbnail)
 
-            screen.ids.thumbnails.add_widget(thumbnail)
+            screen.ids.thumbnails.add_widget(Thumbnail(im_index=self.view_file_index[idx]))
             
             self.loading_thumbnail = True
             Clock.schedule_once(self._update_thumbnail)
@@ -1411,7 +1652,7 @@ class MyDataBaseApp(App):
         return
     
     def _add_thumbnails_delayed(self):
-        time.sleep(self.animation_speed + 0.2)
+        time.sleep(self.TRANSITION_SPEED + 0.2)
         self._add_thumbnails()
 
     def _update_thumbnail(self, dt):
@@ -1453,6 +1694,7 @@ class MyDataBaseApp(App):
             self.logger.debug('update {}'.format(save_dict))
 
         self.dbm.update_record(self.loaded_title, save_dict)
+
 
     # ファイルの追加
     def open_file_entry_popup(self):
@@ -1633,8 +1875,8 @@ class MyDataBaseApp(App):
             return
 
         msg = '選択中のファイルを削除します。\nよろしいですか？'
-        content = YesNoPopUp(text=msg, subtext='', yes=self.start_delete_files, no=self.close_confirm_popup)
-        self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(400, 400), auto_dismiss=False)
+        content = SimpleYesNoPopUp(text=msg, yes=self.start_delete_files, no=self.close_confirm_popup)
+        self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=False)
         self.c_popup.open()
 
     def start_delete_files(self):
@@ -1753,9 +1995,9 @@ class MyDataBaseApp(App):
     def view_help(self, instance):
         self.help_on = (instance.state == 'down')
 
-    def _load_template(self, file_name):
+    def _load_template(self, kv_type, file_name):
         # kvファイル名の取得
-        kv_name = os.path.join(self.CURRENT_DIR, 'data', 'kv_template','{}.kv'.format(file_name).lower())
+        kv_name = os.path.join(self.CURRENT_DIR, 'data', 'kv_template', kv_type, '{}.kv'.format(file_name).lower())
         instance = Builder.load_file(kv_name)
         return instance
 
@@ -1771,20 +2013,27 @@ class MyDataBaseApp(App):
     def _reset_mode(self):
         self.item_select_mode = 'normal'
 
-        self.root.ids.favorite.state = 'normal'
-        self.root.ids.chapter.state = 'normal'
-        self.root.ids.select.state = 'normal'
+        for child in self.root.ids.av.children:
+            if child.__class__.__name__ == 'ActionToggleButton':
+                child.state = 'normal'
+
+        #self.root.ids.favorite.state = 'normal'
+        #self.root.ids.chapter.state = 'normal'
+        #self.root.ids.select.state = 'normal'
+
+        self.help_on = False
+
+        if self.root.ids.sm.current == 'ThumbnailView':
+            self.selected_file_index = set([])
+            self._update_all_thumbnail_color()
 
         option_layout = self.root.ids.additional_option
         option_layout.clear_widgets()
-
-        self.selected_file_index = set([])
-        self._update_all_thumbnail_color()
-
         height = 0
         Animation(height=height, d=.3, t='out_quart').start(option_layout)
 
 
+    # 進捗ポップアップ表示
     def _open_progress(self, p_type):
         if p_type == 'copy':
             content = ProgressPopUp()
@@ -1868,19 +2117,25 @@ class MyDataBaseApp(App):
                 self.change_view_image('next')
             elif keycode[1] in ['up', 'down']:
                 self.change_anim_speed(keycode[1])
-            elif keycode[1] == 'backspace':
-                self.go_previous_screen()
+
+        if keycode[1] == 'backspace':
+            self.go_previous_screen()
 
         # Return True to accept the key. Otherwise, it will be used by
         # the system.
         return True
 
     def exit_app(self):
-        content = YesNoPopUp(text='アプリを終了しますか？', subtext='', yes=self.stop, no=self.close_confirm_popup)
-        content.remove_widget(content.ids.sv)
+        content = SimpleYesNoPopUp(text='アプリを終了しますか？', yes=self.app_finalization, no=self.close_confirm_popup)
         
-        self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(400, 400), auto_dismiss=False)
+        self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=False)
         self.c_popup.open()
+
+    def app_finalization(self):
+        self.dbm.close()
+        # TODO: 設定値の保存
+        self.logger.debug('---------END MyDataBaseApp--------')
+        self.stop()
 
 
 def show_all_child(parent, he=1):
