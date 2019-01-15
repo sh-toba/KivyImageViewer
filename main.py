@@ -182,6 +182,7 @@ class MyDataBaseApp(App):
     item_select_mode = 'normal' # normal:画像ビューへ, select:選択, favorite:お気に入り選択、chapter:チャプター選択
 
     # DataBaseList用
+    dbc_load_mode = BooleanProperty(False)
     db_list = {}
 
     # DataBaseItemView用
@@ -359,11 +360,11 @@ class MyDataBaseApp(App):
             if mode == 'select':
                 height = 40
                 tmp_button = Button(text='削除',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
-                tmp_button.bind(on_release=self.delete_database)
+                tmp_button.bind(on_release=self.delete_db)
                 option_layout.add_widget(tmp_button)
 
                 tmp_button = Button(text='複製',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
-                tmp_button.bind(on_release=self.copy_database)
+                tmp_button.bind(on_release=self.copy_db)
                 option_layout.add_widget(tmp_button)
             else:
                 height = 0
@@ -610,13 +611,15 @@ class MyDataBaseApp(App):
             size_str = '{:.1f}'.format(info['size'])
             db_list_layout.add_widget(DBInfo(title=key, data_num=info['num'], data_size=size_str))
         
-    def create_database(self):
+    def open_dbc_popup(self, load_mode=False):
+        self.dbc_load_mode = load_mode
+
         # ポップアップから、タイトル、パス、オプションタグ種別、タグ登録可能数を取得
         content = self._load_template('popup', 'DBCreate')
-        self.popup = Popup(title="データベース作成", content=content, size_hint=(None, None), size=(800, 400), auto_dismiss=False)
+        self.popup = Popup(title="データベース登録", content=content, size_hint=(None, None), size=(800, 400), auto_dismiss=False)
         self.popup.open()
 
-    def run_create_database(self, title, path, tag_types_s, max_asigns_s):
+    def create_db(self, title, path, tag_types_s, max_asigns_s):
 
         err_msg = []
 
@@ -630,43 +633,60 @@ class MyDataBaseApp(App):
             err_msg.append('Pathを入力してください')
         elif not os.path.exists(path):
             err_msg.append('不正なパスです')
-        elif self.dbm.database_is_exist(path):
-            err_msg.append('既に他のデータベースが存在します')
+        else: 
+            exist_db = self.dbm.database_is_exist(path)
+            if (not self.dbc_load_mode) & (exist_db):
+                err_msg.append('既に他のデータベースが存在します')
+            elif (self.dbc_load_mode) & (not exist_db):
+                err_msg.append('データベースが見つかりません')
         
-        db_option = {}
-        if tag_types_s != '':
-            tag_types = tag_types_s.split(',')
-            max_asigns = max_asigns_s.split(',')
-            if len(tag_types) != len(max_asigns):
-                err_msg.append('タグ種別と最大登録数の要素数を一致させてください')
-            else:
-                try:
-                    for i, tt in enumerate(tag_types):
-                        if tt == '':
-                            err_msg.append('タグ種別は空欄にできません')
-                            break
-                        elif tt in db_option.keys():
-                            err_msg.append('タグ種別が重複しています')
-                            break
-                        db_option[tt] = ('text', int(max_asigns[i]))
-                except:
-                    err_msg.append('最大登録数: 1以上の整数にしてください')
+        if self.dbc_load_mode:
+            # 接続試行
+            if not self.dbm.connect_database(path):
+                err_msg.append('データベースの接続に失敗しました')
+        else:
+            # タグ情報読み込み
+            db_option = {}
+            if tag_types_s != '':
+                tag_types = tag_types_s.split(',')
+                max_asigns = max_asigns_s.split(',')
+                if len(tag_types) != len(max_asigns):
+                    err_msg.append('タグ種別と最大登録数の要素数を一致させてください')
+                else:
+                    try:
+                        for i, tt in enumerate(tag_types):
+                            if tt == '':
+                                err_msg.append('タグ種別は空欄にできません')
+                                break
+                            elif tt in db_option.keys():
+                                err_msg.append('タグ種別が重複しています')
+                                break
+                            db_option[tt] = ('text', int(max_asigns[i]))
+                    except:
+                        err_msg.append('最大登録数: 1以上の整数にしてください')
 
         if len(err_msg) != 0:
             content = SimplePopUp(text='\n'.join(err_msg), close=self.close_confirm_popup)
             self.c_popup = Popup(title="エラー", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
         else:
             self.close_popup()
-
-            self.dbm.create_database(path, option=db_option)
-            content = SimplePopUp(text='データベースを作成しました'.join(err_msg), close=self.close_confirm_popup)
+            if self.dbc_load_mode:
+                num, sum_size = self.dbm.get_db_info()
+                self.db_list[title] = {
+                    'path':path,
+                    'num':num,
+                    'size':sum_size
+                }
+                self.dbm.close()
+            else:
+                self.dbm.create_database(path, option=db_option)
+                self.db_list[title] = {
+                    'path':path,
+                    'num':0,
+                    'size':0
+                }
+            content = SimplePopUp(text='データベースを登録しました', close=self.close_confirm_popup)
             self.c_popup = Popup(title="完了", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
-            
-            self.db_list[title] = {
-                'path':path,
-                'num':0,
-                'size':0
-            }
             self._save_db_list() 
             self.reload_db_list()
             
@@ -674,11 +694,7 @@ class MyDataBaseApp(App):
         
         return
 
-    def load_exist_database(self):
-        # ポップアップから、パスを取得、データベース情報の読み込み
-        pass
-
-    def select_database(self, instance):
+    def select_db(self, instance):
         if self.item_select_mode == 'normal':
             self.db_title = instance.title
             self.go_databaseitemsview()
@@ -686,41 +702,35 @@ class MyDataBaseApp(App):
         elif self.item_select_mode == 'select':
             instance.is_selected ^= True
 
-    def delete_database(self, instance):
+    def delete_db(self, instance):
 
         self.selected_db = self._get_selected_db()
         if len(self.selected_db) == 0:
             return
 
         # 確認画面
-        msg = '選択中のデータベースを削除します。\nよろしいですか？'
-        content = OptionalPopUp(text=msg, cbtext='全データ削除', yes=self.run_delete_database, no=self.close_confirm_popup)
+        msg = '選択中のデータベースを除外します。\nよろしいですか？\n（データは削除されません）'
+        content = SimpleYesNoPopUp(text=msg, yes=self.run_delete_db, no=self.close_confirm_popup)
         self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=False)
         self.c_popup.open()
         
         return
 
-    def run_delete_database(self):
-
-        # TODO：時間がかかると嫌なので、今は使っていない
-        delete_all = self.c_popup.content.ids.mcb.ids.cb.active
-
+    def run_delete_db(self):
+        
         # データベースから解除
         for di in self.selected_db:
-
-            if delete_all:
-                pass
-                #trg_dir = self.db_list['path']
-                #shutil.rmtree(trg_dir)
-                #os.mkdir(trg_dir)
             self.db_list.pop(di)
+
+        self._save_db_list() 
+        self.reload_db_list()        
 
         self.close_confirm_popup()
 
-    def copy_database(self, instance):
+    def copy_db(self, instance):
         pass
 
-    def run_copy_database(self):
+    def run_copy_db(self):
         pass
 
 

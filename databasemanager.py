@@ -179,6 +179,7 @@ class DataBaseManager():
         self.close()
 
 
+
     # MainTable操作
     def get_db_info(self):
         size_list = self.get_items('Size', convert=True)
@@ -1071,5 +1072,5 @@ class DataBaseManager():
 
     def search_files(self, path):
         p = Path(path)
-        file_list = sorted(list(chain.from_iterable([p.glob("*." + ext) for ext in self.SUPPORTED_EXT])))
-        return [str(r) for r in file_list]
+        file_list = list(chain.from_iterable([p.glob("*." + ext) for ext in self.SUPPORTED_EXT]))
+        return sorted([str(r) for r in file_list])

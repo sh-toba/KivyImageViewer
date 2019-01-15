@@ -9,7 +9,7 @@ BoxLayout:
         size_hint_y:None
         height: 40
         valign: 'center'
-        text: '新しくデータベースを作成します'
+        text: '既存のデータベースを読み込みます' if app.dbc_load_mode else '新しくデータベースを作成します'
     
     BoxLayout:
         orientation: 'vertical'
@@ -78,6 +78,7 @@ BoxLayout:
                 text: ''
                 hint_text: '追加するタグ種別を入力してください(","区切り)'
                 on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+                disabled: app.dbc_load_mode
         BoxLayout:
             size_hint_y:None
             height:40
@@ -90,6 +91,7 @@ BoxLayout:
                 text: ''
                 hint_text: '登録可能なタグの最大数を入力してください(","区切り)'
                 on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+                disabled: app.dbc_load_mode
  
 	BoxLayout:
 		orientation: 'horizontal'
@@ -97,8 +99,8 @@ BoxLayout:
         height:40
 		Button:
 			size_hint: .5, 1
-			text: '作成'
-			on_release: app.run_create_database(title_input.text, path_input.text, tagtype_input.text, maxtag_input.text)
+			text: '登録'
+			on_release: app.create_db(title_input.text, path_input.text, tagtype_input.text, maxtag_input.text)
  
 		Button:
 			size_hint: .5, 1
