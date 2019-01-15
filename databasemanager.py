@@ -1,7 +1,7 @@
 #-*- coding: utf-8 -*-
 
 from pathlib import Path
-import sqlite3, os, copy, glob, time, threading, datetime, shutil, logging
+import sqlite3, os, copy, glob, time, threading, datetime, shutil, logging, json
 from itertools import chain
 from PIL import Image, ImageSequence
 
@@ -15,8 +15,13 @@ class DataBaseManager():
     logger = logging.getLogger('MyDBApp') 
 
     DATABASE_NAME = 'database.sqlite'
+    OPTION_NAME = 'option.json'
+
+    FILE_ENCODING = 'utf-8'
+
     DATA_DIR = 'data'
     TAG_IMAGE_DIR = 'tag_image'
+    BACKUP_DIR = 'backup'
     FILE_NUMBER_OF_DIGITS = 5
 
     SUPPORTED_EXT = ["jpg", "jpeg", "png", "bmp", "gif", "zip"]
@@ -81,6 +86,10 @@ class DataBaseManager():
         self.cursor.close()
         self.connection.close()
     
+    def database_is_exist(self, db_root):
+        db_path = os.path.join(db_root, self.DATABASE_NAME)
+        return os.path.exists(db_path)
+
     def connect_database(self, db_root):
 
         db_path = os.path.join(db_root, self.DATABASE_NAME)
@@ -95,15 +104,21 @@ class DataBaseManager():
 
         self.connection = sqlite3.connect(db_path, detect_types = sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
         self.cursor = self.connection.cursor()
+
+        opt_name = os.path.join(self.db_root, self.OPTION_NAME)
+        with open(opt_name, 'r', encoding=self.FILE_ENCODING) as opt_file:
+            max_asign_num = json.load(opt_file)
+
+        return max_asign_num
     
-    def create_database(self, db_root, additional_tags={}):
+    def create_database(self, db_root, option={}):
         """
         概要:
             新規データベースを作成する。
         引数:
             db_root: データベースのルートディレクトリ
             additional_tags: ユーザが任意で追加していくタグのdict
-                - key:タグ名、value:sqlite内でのデータ型
+                - key:タグ名、value:tuple(sqlite内でのデータ型, 最大登録数)
         返り値:
             db_rootにdatabase.sqliteが存在する場合Falseリターン
         メモ:
@@ -113,6 +128,13 @@ class DataBaseManager():
         db_path = os.path.join(db_root, self.DATABASE_NAME)
         if os.path.exists(db_path):
             return False
+
+        # オプションの分離
+        additional_tags = {}
+        max_asign_num = {}
+        for key, value in option.items():
+            additional_tags[key] = value[0]
+            max_asign_num[key] = value[1]
 
         # データベースとデータ置き場の作成
         self.db_root = db_root
@@ -145,19 +167,27 @@ class DataBaseManager():
             self.logger.debug(sql)
             self.cursor.execute(sql)
 
+        opt_name = os.path.join(self.db_root, self.OPTION_NAME)
+        with open(opt_name, 'w', encoding=self.FILE_ENCODING) as opt_file:
+            json.dump(max_asign_num, opt_file)
+
         self.connection.commit()
 
         return True
 
     def delete_database(self):
-        pass
+        self.close()
+
 
     # MainTable操作
-    def get_record_num(self):
-        sql = 'SELECT count(*) FROM MainTable'
-        self.cursor.execute(sql)
-        result = self.cursor.fetchall()
-        return result[0][0]
+    def get_db_info(self):
+        size_list = self.get_items('Size', convert=True)
+        num = len(size_list)
+        if num == 0:
+            sum_size = 0
+        else:
+            sum_size = sum(size_list)
+        return num, sum_size
 
     def insert_records(self, records, move_file=False):
         """
@@ -184,6 +214,7 @@ class DataBaseManager():
             ・上書きができるようにすると色々と幅が広がる
                 - 上書きモードと追加モードなどなど
         """
+
         op_mode = 'move' if move_file else 'copy'
         title_list = self.get_items('Title', convert=True)
 
@@ -208,7 +239,8 @@ class DataBaseManager():
                 break
 
             # ファイル一覧取得
-            file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(src_path, "*." + ext)) for ext in self.SUPPORTED_EXT])))
+            file_list = self.search_files(src_path)
+            #file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(src_path, "*." + ext)) for ext in self.SUPPORTED_EXT])))
 
             # ファイルがない場合
             if len(file_list) == 0:
@@ -687,14 +719,16 @@ class DataBaseManager():
         #tmp_list = sorted(glob.glob(os.path.join(file_dir, "*")))
         #file_list = [os.path.basename(r) for r in tmp_list]
 
-        tmp_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(file_dir, "*." + ext)) for ext in self.SUPPORTED_EXT])))
+        tmp_list = self.search_files(file_dir)
+        #tmp_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(file_dir, "*." + ext)) for ext in self.SUPPORTED_EXT])))
+        
         file_list = [os.path.basename(r) for r in tmp_list]
 
         return file_dir, file_list
 
 
     # 追加項目操作
-    def get_additional_tags(self):
+    def get_additional_table(self):
         """
         ユーザ作成のタグ一覧の取得
         (= MainTable以外のテーブル名の一覧)
@@ -702,7 +736,7 @@ class DataBaseManager():
         table_list = []
         self.cursor.execute("select * from sqlite_master where type='table'")
         for x in self.cursor.fetchall():
-            if not x[1] is 'MainTable':
+            if not x[1] == 'MainTable':
                 table_list.append(x[1])
         return table_list
 
@@ -950,6 +984,24 @@ class DataBaseManager():
             return ret.fetchall()
 
 
+    def tag_backup(self):
+        
+        date_str = datetime.datetime.now().strftime('%Y%m%d%H%M')
+        save_dir = os.path.join(self.db_root, self.BACKUP_DIR, date_str)
+
+        if not os.path.exists(save_dir):
+            os.makedirs(save_dir, exist_ok=True)
+
+        table_list = self.get_additional_table()
+        for table in table_list:
+            fname = os.path.join(save_dir, table + '.csv')
+            with open(fname, "w", encoding=self.FILE_ENCODING) as write_file:
+                sql = 'SELECT Name,InitialCharacter,IsFavorite,Link FROM {}'.format(table)
+                for row in self.cursor.execute(sql):
+                    write_txt = ','.join([str(r) for r in row])
+                    write_file.write(write_txt)
+
+
     def show_all(self):
         sql = 'SELECT * FROM MainTable'
         ret = self.cursor.execute(sql)
@@ -991,7 +1043,7 @@ class DataBaseManager():
             return list([src])
 
     def _gif_to_zip(self, src_gif, dst_dir, thum_dir):
-        
+                
         if not os.path.exists(dst_dir):
             os.mkdir(dst_dir)
 
@@ -1016,3 +1068,8 @@ class DataBaseManager():
         """
         shutil.make_archive(dst_dir, 'zip', dst_dir)
         shutil.rmtree(dst_dir)
+
+    def search_files(self, path):
+        p = Path(path)
+        file_list = sorted(list(chain.from_iterable([p.glob("*." + ext) for ext in self.SUPPORTED_EXT])))
+        return [str(r) for r in file_list]

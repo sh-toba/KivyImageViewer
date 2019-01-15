@@ -1,56 +1,17 @@
 #-*- coding: shift-jis -*-
 #:kivy 1.10.1
 
-<ThumbnailJump@Button>:
-    text: ''
-    font_size: 16
-    background_color: 0.6, 0.6, 0.6, 0.8
-    on_press: app.change_thumbnailview(self)
-
-<JumpPopUp@BoxLayout>:
-	orientation: 'vertical'
-    spacing: 10
-    
-    input_text: ''
-
-    AnchorLayout:
-        anchor_x:'center'
-        size_hint_y:None
-        height: 30
-        TextInput:
-            text: ''
-            hint_text:  '1 - {}'.format(app.page_num)
-            on_text: root.input_text = self.text
-            multiline: False
- 
-	BoxLayout:
-		orientation: 'horizontal'
-		Button:
-			size_hint: .5, 1
-			text: 'OK'
-			on_release: app.jump_thumbnail(root.input_text)
- 
-		Button:
-			size_hint: .5, 1
-			text: 'キャンセル'
-			on_release: app.close_popup()
-
+# ベースアイテム
+<ImageButton@ButtonBehavior+Image>:
+    nocache: True
+    anim_delay: -1
 <ClickableLabel@ButtonBehavior+Label>:
-    #text_size: self.size
+    size_hint_x:None
     size: self.texture_size
     halign: 'left'
-    #valign: 'center'
     font_size: '16sp'
-    #color: 0, 0, 0, 1
-<ClickableLabelT@ToggleButtonBehavior+Label>:
-    #text_size: self.size
-    size: self.texture_size
-    halign: 'left'
-    #valign: 'center'
-    font_size: '16sp'
-    #color: 0, 0, 0, 1
 
-<FilterItem@BoxLayout>:
+<MyCheckBox@BoxLayout>:
     text: ''
     #size_hint: None, None
     #size: 150, 50
@@ -64,9 +25,52 @@
         width: '32dp'
     ClickableLabel:
         on_press: cb._do_press()
-        size_hint_x:None
         text: root.text
+        
+<ScrollStack@ScrollView>:
+    StackLayout:
+        id: fi
+        orientation: 'lr-tb'
+        #cols: 4
+        size_hint_y: None
+        height: self.minimum_height
+        padding: 5
+        spacing: 10
 
+# DataBaseList用
+<DBInfo@BoxLayout>:
+    title:''
+    data_num:''
+    data_size:''
+
+    is_selected:False
+
+    orientation:'vertical'
+    size_hint: None, None
+    padding:5
+    width: 150
+    height: 80
+
+    canvas.before:
+        Color:
+            rgba: [0.0,0.0,1.0,0.6] if root.is_selected else [0.5, 0.5, 0.5, 1]
+        Rectangle:
+            size: self.size
+            pos: self.pos
+
+    ClickableLabel:
+        text: root.title
+        size_hint_x: 1
+        size_hint_y: None
+        height: 20
+        font_size: 18
+        on_press: app.select_database(root)
+        #color: [0.0,0.0,1.0,1.0] if root.is_selected else [1,1,1,1.0]
+    Label:
+        text: '登録数：{}\nサイズ：{}MB'.format(root.data_num,root.data_size)
+        font_size: 12
+
+# DataBaseItemsView用
 <DBItem@BoxLayout>:
     
     title: ''
@@ -82,7 +86,7 @@
     height:40
     width: self.minimum_width
 
-    DBItemLabel:
+    ClickableLabel:
         text: '{}({})'.format(root.title, root.filenum)
         color: [0.0,0.0,1.0,1.0] if root.is_selected else [0.25,0.25,0.25,1.0]
         on_press: app.select_db_item(root)
@@ -93,18 +97,13 @@
         source: 'data/icons/star.png'
         color: [1.0,0.0,0.0,1.0] if root.is_favorite else [1.0,1.0,1.0,0.0]
 
-<DBItemLabel@ButtonBehavior+Label>:
-    size_hint_x:None
-    size: self.texture_size
-    halign: 'left'
-    font_size: '16sp'
-
 <DBItemInitialChar@ToggleButton>:
     text: ''
     font_size: 16
     background_color: 0.6, 0.6, 0.6, 0.8
     group: 'initial_char'
     on_release: app.adapt_ic_filter(self)
+
 <NewEntryLayout@BoxLayout>:
     orientation: 'vertical'
     BoxLayout:
@@ -182,8 +181,8 @@
         group: 'tecb'
     ClickableLabel:
         on_press: cb._do_press(); app.reflect_tag(self, cb.active)
-        size_hint_x:None
         text: root.text
+
 <TagEditLayout@BoxLayout>:
     title: ''
     orientation: 'vertical'
@@ -200,10 +199,83 @@
             text:root.title
             color: 0, 0.8, 0.4, 1
 
+# ThumbnailView用
+<Thumbnail@BoxLayout>:
+    orientation: 'vertical'
+
+    im_source: ''
+    fa_source: ''
+    ch_source: ''
+
+    im_index: 0 
+
+    is_based: False
+    is_selected: False
+    is_favorite: False
+    is_chapter: False
+
+    size_hint: None, None
+    width: 120*app.view_size
+    height: 90*app.view_size + 10
+
+    ImageButton:
+        id: image
+        source: root.im_source
+        on_press: app.select_thumbnail(root)
+        color: [0.0,0.8,0.6,1.0] if root.is_based else [0.0,0.6,0.8,0.5] if root.is_selected else [1.0,1.0,1.0,1.0]
+
+    GridLayout:
+        cols:4
+        rows:1
+        size_hint_y: None
+        height:10
+        Image:
+            source: root.fa_source
+            color: [1.0,0.0,0.0,1.0] if root.is_favorite else [1.0,1.0,1.0,1.0]
+        Image: 
+            source: root.ch_source
+            color: [0.0,0.8,0.4,1.0] if root.is_chapter else [1.0,1.0,1.0,1.0]
+
+<ThumbnailJump@Button>:
+    text: ''
+    font_size: 16
+    background_color: 0.6, 0.6, 0.6, 0.8
+    on_press: app.change_thumbnailview(self)
+
+# ImageView用
 <ImageViewButton@Button>:
     font_size: 16
     color: [0.8,0.8,0.8,0.8] if app.help_on else [0.8,0.8,0.8,0]
     background_color: [0,0.4,0.8,0.5] if app.help_on else [0,0.4,0.8,0.0]
+
+# ポップアップ
+<JumpPopUp@BoxLayout>:
+	orientation: 'vertical'
+    spacing: 10
+    
+    input_text: ''
+
+    AnchorLayout:
+        anchor_x:'center'
+        size_hint_y:None
+        height: 30
+        TextInput:
+            text: ''
+            hint_text:  '1 - {}'.format(app.page_num)
+            on_text: root.input_text = self.text
+            multiline: False
+ 
+	BoxLayout:
+		orientation: 'horizontal'
+		Button:
+			size_hint: .5, 1
+			text: 'OK'
+			on_release: app.jump_thumbnail(root.input_text)
+ 
+		Button:
+			size_hint: .5, 1
+			text: 'キャンセル'
+			on_release: app.close_popup()
 
 <YesNoPopUp@BoxLayout>:
 	orientation: 'vertical'
@@ -235,6 +307,28 @@
 			text: 'いいえ'
 			on_release: root.no()
 
+
+<SimpleYesNoPopUp@BoxLayout>:
+	orientation: 'vertical'
+ 
+    Label:
+        text: root.text
+        font_size: 16
+ 
+	BoxLayout:
+		orientation: 'horizontal'
+        size_hint_y: None
+        height: 60
+ 
+		Button:
+			size_hint: .5, 1
+			text: 'はい'
+			on_release: root.yes()
+		Button:
+			size_hint: .5, 1
+			text: 'いいえ'
+			on_release: root.no()
+
 <SimplePopUp@BoxLayout>:
 	orientation: 'vertical'
  
@@ -246,6 +340,38 @@
         height: 60
         text: '閉じる'
         on_release: root.close()
+<OptionalPopup@BoxLayout>:
+	orientation: 'vertical'
+
+    text: ''
+    cbtext: ''
+
+    Label:
+        text: root.text
+        font_size: 16
+
+    AnchorLayout:
+        anchor_x:'center'
+        anchor_y:'center'
+        size_hint_y:None
+        height:40
+        MyCheckBox:
+            id: mcb
+            text: root.cbtext
+
+	BoxLayout:
+		orientation: 'horizontal'
+        size_hint_y: None
+        height: 60
+
+		Button:
+			size_hint: .5, 1
+			text: 'はい'
+			on_release: root.yes()
+		Button:
+			size_hint: .5, 1
+			text: 'いいえ'
+			on_release: root.no()
 
 <ProgressPopUp@BoxLayout>:
 	orientation: 'vertical'
