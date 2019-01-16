@@ -104,7 +104,7 @@
     group: 'initial_char'
     on_release: app.adapt_ic_filter(self)
 
-<NewEntryLayout@BoxLayout>:
+<DataEntryLayout@BoxLayout>:
     orientation: 'vertical'
     BoxLayout:
         size_hint_y: None
@@ -165,8 +165,20 @@
             text: ''
             hint_text: 'リンクするURLを入力してください'
             on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+    BoxLayout:
+        size_hint_y: None
+        height: 30
+        canvas.before:
+            Color:
+                rgba: 0.25, 0.5, 0.25, 0.5
+            Rectangle:
+                size: self.size
+                pos: self.pos
+        Label:
+            text:'オプション'
+            color: 0, 0.8, 0.4, 1
 
-<TagEditItem@BoxLayout>:
+<TagEntryItem@BoxLayout>:
     text: ''
     #size_hint: None, None
     #size: 150, 50
@@ -182,23 +194,6 @@
     ClickableLabel:
         on_press: cb._do_press(); app.reflect_tag(self, cb.active)
         text: root.text
-
-<TagEditLayout@BoxLayout>:
-    title: ''
-    orientation: 'vertical'
-    BoxLayout:
-        size_hint_y: None
-        height: 30
-        canvas.before:
-            Color:
-                rgba: 0.25, 0.5, 0.25, 0.5
-            Rectangle:
-                size: self.size
-                pos: self.pos
-        Label:
-            text:root.title
-            color: 0, 0.8, 0.4, 1
-
 # ThumbnailView用
 <Thumbnail@BoxLayout>:
     orientation: 'vertical'
@@ -290,7 +285,8 @@
         id: sv
         Label:
             size_hint_y:None
-            height: self.texture_size[1]
+            text_size: root.width, None
+            size: self.texture_size
             text: root.subtext
  
 	BoxLayout:

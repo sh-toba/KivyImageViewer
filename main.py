@@ -3,6 +3,7 @@ import os, sys, logging
 import pathlib, glob, time, math, threading, json, copy, webbrowser, shutil
 from functools import partial
 from itertools import chain
+import my_utils as mutl
 
 from kivy.config import Config
 from kivy.app import App
@@ -27,7 +28,7 @@ from kivy.uix.image import Image
 from kivy.uix.video import Video
 from kivy.uix.behaviors import ButtonBehavior, ToggleButtonBehavior
 from kivy.uix.screenmanager import Screen, FallOutTransition, SlideTransition, RiseInTransition
-from kivy.uix.tabbedpanel import TabbedPanelItem, TabbedPanelHeader
+from kivy.uix.tabbedpanel import TabbedPanel, TabbedPanelItem, TabbedPanelHeader
 from kivy.uix.label import Label
 from kivy.uix.spinner import Spinner
 
@@ -57,12 +58,10 @@ class DBItem(BoxLayout):
     title = StringProperty()
     filenum = NumericProperty()
     is_favorite = BooleanProperty()
-class NewEntryLayout(BoxLayout):
+class DataEntryLayout(BoxLayout):
     pass
-class TagEditItem(BoxLayout):
+class TagEntryItem(BoxLayout):
     text = StringProperty()
-class TagEditLayout(BoxLayout):
-    title = StringProperty()
 
 # ThumbnailView用
 class Thumbnail(BoxLayout):
@@ -134,6 +133,7 @@ class MyDataBaseApp(App):
     #sh.setFormatter(formatter)
     
     CURRENT_DIR = os.path.dirname(__file__)
+    FILE_ENCODING = 'utf-8'
     HEADER_OPT_COLOR = [0.128, 0.128, 0.128, 1]
     TRANSITION_SPEED = .4
     NO_IMAGE = StringProperty('data/noimage.png')
@@ -183,13 +183,13 @@ class MyDataBaseApp(App):
 
     # DataBaseList用
     dbc_load_mode = BooleanProperty(False)
+    db_tag_tables = []
     db_list = {}
 
     # DataBaseItemView用
     db_title = ''
 
     popup_mode = 'close'
-
     op_is_active = False
     task_remain = False
     entry_count = 0
@@ -228,7 +228,6 @@ class MyDataBaseApp(App):
     
     # 表示制限関連
     # TODO: 前回設定の保存と反映
-
     tv_filter = {
         'options':{},
         'enable_or':False,
@@ -381,7 +380,7 @@ class MyDataBaseApp(App):
             elif mode == 'tag':
                 height = 40
                 tmp_button = Button(text='タグ登録',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
-                tmp_button.bind(on_release=self.open_tag_setting)
+                tmp_button.bind(on_release=self.open_tag_entry)
                 option_layout.add_widget(tmp_button)
 
                 tmp_button2 = Button(text='CSV出力',size_hint_x=None,width=90, background_color=self.HEADER_OPT_COLOR)
@@ -389,7 +388,7 @@ class MyDataBaseApp(App):
                 option_layout.add_widget(tmp_button2)
 
                 tmp_button3 = Button(text='CSV読込み',size_hint_x=None,width=100, background_color=self.HEADER_OPT_COLOR)
-                #tmp_button3.bind(on_release=self.open_tag_setting)
+                #tmp_button3.bind(on_release=self.open_tag_entry)
                 option_layout.add_widget(tmp_button3)
 
             elif mode == 'favorite':
@@ -473,7 +472,7 @@ class MyDataBaseApp(App):
         if sm.current == 'DataBaseItemsView':
 
             tag_list = {}
-            for key in sorted(self.db_tags.keys()):
+            for key in self.db_tag_tables:
                 tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
 
             for key, val_list in sorted(tag_list.items(), key=lambda x:x[0]):
@@ -515,6 +514,9 @@ class MyDataBaseApp(App):
                     print('{0} - {1}'.format(fi.text, fi.ids.cb.active))
 
         elif sm.current == 'DataBaseItemsView':
+            self.db_filter['enable_or'] = eo_active
+
+            """
             self.db_filter['options']={}
             for th in tp.tab_list:
                 key = th.text
@@ -524,7 +526,8 @@ class MyDataBaseApp(App):
                             self.db_filter['options'][key].append(fi.text)
                         else:
                             self.db_filter['options'][key] = [fi.text]
-            self.db_filter['enable_or'] = eo_active
+            """
+            self.db_filter['options'] = self._get_selected_tag(tp)
 
             self.reload_db_header(filt_on=True)
             self.reload_db_items()
@@ -572,7 +575,7 @@ class MyDataBaseApp(App):
                     self.entry_count += 1            
                     self.add_new_entry(path)
             
-            elif self.popup_mode == 'tag_setting':
+            elif self.popup_mode == 'tag_entry':
                 _, ext = os.path.splitext(path)
                 if ext in [".jpg", ".jpeg", ".png", ".bmp"]:
                     self.popup.content.im_source = path
@@ -584,7 +587,7 @@ class MyDataBaseApp(App):
             if self.popup_mode == 'file_entry':
                 if os.path.isdir(path):
                     #file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(path, "*." + ext)) for ext in self.dbm.SUPPORTED_EXT])))
-                    file_list = self.dbm.search_files(path)
+                    file_list = mutl.search_files(path, self.dbm.SUPPORTED_EXT)
                     for fl in file_list:
                         self.add_file_entry(fl)
                 elif os.path.isfile(path):
@@ -595,12 +598,54 @@ class MyDataBaseApp(App):
         return
 
 
+    def _create_tag_panel(self, title=None):
+        tag_list = {}
+        for key in self.db_tag_tables:
+            tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
+    
+        tp = TabbedPanel(do_default_tab=False)
+        for key, val_list in sorted(tag_list.items(), key=lambda x:x[0]):
+            th = TabbedPanelHeader(text=key)
+            filter_items = ScrollStack()
+
+            if not title is None:
+                data_tags = self.dbm.get_items(col_name=key, title=title, convert=True)
+            else:
+                if key in self.db_filter['options'].keys():
+                    data_tags = copy.deepcopy(self.db_filter['options'][key])
+                else:
+                    data_tags = []
+
+            for val in val_list:
+                
+                # TODO: 登録内容を反映させる
+                mcb = MyCheckBox(text=val)
+                mcb.ids.cb.active = (val in data_tags)
+                filter_items.ids.fi.add_widget(mcb)
+                
+            th.content = filter_items
+            tp.add_widget(th)
+        return tp
+
+    def _get_selected_tag(self, tp):
+        tmp_dict = {}
+        for th in tp.tab_list:
+            key = th.text
+            for fi in th.content.ids.fi.children:
+                if fi.ids.cb.active:
+                    if key in tmp_dict.keys():
+                        tmp_dict[key].append(fi.text)
+                    else:
+                        tmp_dict[key] = [fi.text]
+        return tmp_dict
+
+
     # DataBaseListイベント
     def reload_db_list(self):
 
         db_info_path = os.path.join(self.CURRENT_DIR, self.DATABASE_LIST)
         if os.path.exists(db_info_path):
-            with open(os.path.join(self.CURRENT_DIR, self.DATABASE_LIST), 'r', encoding='utf-8') as db_info_file:
+            with open(os.path.join(self.CURRENT_DIR, self.DATABASE_LIST), 'r', encoding=self.FILE_ENCODING) as db_info_file:
                 self.db_list  = json.load(db_info_file)
                 self.logger.debug('read db_list -> {}'.format(self.db_list))
 
@@ -616,10 +661,10 @@ class MyDataBaseApp(App):
 
         # ポップアップから、タイトル、パス、オプションタグ種別、タグ登録可能数を取得
         content = self._load_template('popup', 'DBCreate')
-        self.popup = Popup(title="データベース登録", content=content, size_hint=(None, None), size=(800, 400), auto_dismiss=False)
+        self.popup = Popup(title="データベース登録", content=content, size_hint=(None, None), size=(700, 350), auto_dismiss=False)
         self.popup.open()
 
-    def create_db(self, title, path, tag_types_s, max_asigns_s):
+    def create_db(self, title, path, tag_types_s):
 
         err_msg = []
 
@@ -649,21 +694,14 @@ class MyDataBaseApp(App):
             db_option = {}
             if tag_types_s != '':
                 tag_types = tag_types_s.split(',')
-                max_asigns = max_asigns_s.split(',')
-                if len(tag_types) != len(max_asigns):
-                    err_msg.append('タグ種別と最大登録数の要素数を一致させてください')
-                else:
-                    try:
-                        for i, tt in enumerate(tag_types):
-                            if tt == '':
-                                err_msg.append('タグ種別は空欄にできません')
-                                break
-                            elif tt in db_option.keys():
-                                err_msg.append('タグ種別が重複しています')
-                                break
-                            db_option[tt] = ('text', int(max_asigns[i]))
-                    except:
-                        err_msg.append('最大登録数: 1以上の整数にしてください')
+                for tt in tag_types:
+                    if tt == '':
+                        err_msg.append('タグ種別は空欄にできません')
+                        break
+                    elif tt in db_option.keys():
+                        err_msg.append('タグ種別が重複しています')
+                        break
+                    db_option[tt] = 'text'
 
         if len(err_msg) != 0:
             content = SimplePopUp(text='\n'.join(err_msg), close=self.close_confirm_popup)
@@ -679,7 +717,7 @@ class MyDataBaseApp(App):
                 }
                 self.dbm.close()
             else:
-                self.dbm.create_database(path, option=db_option)
+                self.dbm.create_database(path, db_option=db_option)
                 self.db_list[title] = {
                     'path':path,
                     'num':0,
@@ -736,7 +774,7 @@ class MyDataBaseApp(App):
 
     def _save_db_list(self):
         fname = os.path.join(self.CURRENT_DIR, self.DATABASE_LIST)
-        with open(fname, 'w') as wfile:
+        with open(fname, 'w', encoding=self.FILE_ENCODING) as wfile:
             json.dump(self.db_list, wfile)
 
     def _get_selected_db(self):
@@ -764,43 +802,13 @@ class MyDataBaseApp(App):
         db_root = self.db_list[self.db_title]['path']
 
         if self.dbm.database_is_exist(db_root):
-            self.db_tags = self.dbm.connect_database(db_root)
+            self.dbm.connect_database(db_root)
+            self.db_tag_tables = sorted(self.dbm.get_additional_table())
         else:
             content = SimplePopUp(text='データベースが見つかりません', close=self.close_confirm_popup)
             self.c_popup = Popup(title="エラー", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
             self.c_popup.open()
             return
-
-        """
-        # TODO: 実際には、データベース作成機能が付く
-        db_root = os.path.join(self.CURRENT_DIR,'data', '__tmp__', 'testDB')
-        if not os.path.exists(db_root):
-            os.makedirs(db_root, exist_ok=True)
-
-        db_root = db_root
-        if not self.dbm.connect_database(db_root):
-            additional_tags = {
-                'タイプ': 'text',
-                'ジャンル': 'text',
-                'Misc': 'text'
-            }
-            self.dbm.create_database(db_root,additional_tags=additional_tags)
-
-            db_tags = {
-                'タイプ': 1,
-                'ジャンル': 1,
-                'Misc': 2
-            }
-            tag_file = open(os.path.join(db_root, 'tags.json'), 'w')
-            json.dump(db_tags, tag_file)
-            tag_file.close()
-        # TODO: ここまで前機能
-
-        # 各タグの最大登録数はjsonファイルに記録しておく
-        tag_file = open(os.path.join(db_root, 'tags.json'), 'r')
-        self.db_tags  = json.load(tag_file)
-        self.logger.debug('read {} -> {}'.format(tag_file, self.db_tags))
-        """
 
         self.reload_db_header()
         self.reload_db_items()
@@ -843,7 +851,7 @@ class MyDataBaseApp(App):
                 self.dbm.update_record(title=instance.title, values_dict={'IsFavorite':int(instance.is_favorite)})
 
             elif self.item_select_mode == 'tag':
-                self.open_tag_edit(instance.title)
+                self.open_entry_info(instance.title)
 
             elif self.item_select_mode == 'link':
                 url = self.dbm.get_items('Link', title=instance.title, convert=True)
@@ -896,7 +904,7 @@ class MyDataBaseApp(App):
 
             b_layout = BoxLayout(spacing=5)
             b_layout.add_widget(Label(size_hint_x=None, width=100, text='表示切替', font_size=20))
-            tmp_list = ['Title'] + list(sorted(self.db_tags.keys()))
+            tmp_list = ['Title'] + self.db_tag_tables
             sp = Spinner(size_hint_x=None, width=150, values=tmp_list, text='Title')
             sp.bind(text=self.switch_db_view)
             b_layout.add_widget(sp)
@@ -981,7 +989,7 @@ class MyDataBaseApp(App):
 
 
     # タグ操作
-    def open_tag_setting(self, instance):
+    def open_tag_entry(self, instance):
 
         sm = self.root.ids.sm
 
@@ -989,13 +997,13 @@ class MyDataBaseApp(App):
             return
 
         #ポップアップ構造のテンプレート読み込み
-        content = self._load_template('popup','TagPopUp')
+        content = self._load_template('popup','TagEntry')
         tp = content.ids.tp
         tp.clear_tabs()
 
         # 登録済みのタグ一覧を取得する
         tag_list = {}
-        for key in sorted(self.db_tags.keys()):
+        for key in self.db_tag_tables:
             tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
         #print(tag_list)
 
@@ -1007,7 +1015,7 @@ class MyDataBaseApp(App):
             for val in val_list:
                 #print('{0} - {1}'.format(key, val))
                 #filter_items.ids.fi.add_widget(MyCheckBox(text=val))
-                filter_items.ids.fi.add_widget(TagEditItem(text=val))
+                filter_items.ids.fi.add_widget(TagEntryItem(text=val))
             
             th.content = filter_items
             tp.add_widget(th)
@@ -1015,7 +1023,7 @@ class MyDataBaseApp(App):
         self.popup = Popup(title='タグ編集', content=content, size_hint=(None, None), size=(900, 760), auto_dismiss=False)
         self.popup.open()
 
-        self.popup_mode = 'tag_setting'
+        self.popup_mode = 'tag_entry'
     
     def reflect_tag(self, tag_item, is_active):
 
@@ -1045,10 +1053,7 @@ class MyDataBaseApp(App):
         ic = ic_btn.text
         li = link_input.text
 
-        if table=='Default tab':
-            return
-
-        if (tn == '') | (ic == '') :
+        if (table == 'Default tab') | (tn == '') | (ic == '') :
             return
 
         if self.popup.content.im_source == self.NO_IMAGE:
@@ -1058,23 +1063,60 @@ class MyDataBaseApp(App):
 
         if self.dbm.add_tag(table, (tn,ic, li,tim)):
             #tp.current_tab.content.ids.fi.add_widget(MyCheckBox(text=tag_name))
-            tp.current_tab.content.ids.fi.add_widget(TagEditItem(text=tn))
+            tp.current_tab.content.ids.fi.add_widget(TagEntryItem(text=tn))
             self._clear_tag_info()
         else:
             c_content = SimplePopUp(text='同名のタグがあります', close=self.close_confirm_popup)
             self.c_popup = Popup(title="警告", content=c_content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
             self.c_popup.open()
 
-    def add_tag_on_entry(self, table, tag_name, initial_char):
+    def add_tag_on_entry(self, instance, input_tag, ic_btn):
 
-        if (table == '') | (tag_name == '') | (initial_char == '') :
+        if self.popup_mode == 'entry_info':
+            ref_layout = instance.ids.te_layout
+        elif self.popup_mode == 'data_entry':
+            ref_layout = instance.current_tab.content
+        else:
             return
 
+        for child in ref_layout.children:
+            if child.__class__.__name__ == 'TabbedPanel':
+                table = child.current_tab.text
+                cur_tab = child.current_tab
+
+        tn = input_tag.text
+        ic = ic_btn.text
+
+        if (table == 'Default tab') | (tn == '') | (ic == '') :
+            return
+        
+        if self.dbm.add_tag(table, (tn,ic, '', '')):
+            
+            if self.popup_mode == 'entry_info':
+                cur_tab.content.ids.fi.add_widget(MyCheckBox(text=tn))
+
+            elif self.popup_mode == 'data_entry':
+                for th in instance.tab_list:
+                    for child in th.content.children:
+                        if child.__class__.__name__ == 'TabbedPanel':
+                            for th_tag in child.tab_list:
+                                if th_tag.text == table:
+                                    th_tag.content.ids.fi.add_widget(MyCheckBox(text=tn))
+
+            input_tag.text = ''
+            ic_btn = ''
+
+        else:
+            c_content = SimplePopUp(text='同名のタグがあります', close=self.close_confirm_popup)
+            self.c_popup = Popup(title="警告", content=c_content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+            self.c_popup.open()
+
+        """
         if self.dbm.add_tag(table, (tag_name,initial_char, '', '')):
             tag_list = sorted([''] + self.dbm.get_tag_items(table, 'Name', convert=True))
             for th in self.popup.content.ids.tp.tab_list:
                 for child in th.content.children:
-                    if child.__class__.__name__ == 'TagEditLayout':
+                    if child.__class__.__name__ == 'TagEntryLayout':
                         key = child.title
                         if key == table:
                             for ch in child.children:
@@ -1085,6 +1127,7 @@ class MyDataBaseApp(App):
             c_content = SimplePopUp(text='同名のタグがあります', close=self.close_confirm_popup)
             self.c_popup = Popup(title="警告", content=c_content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
             self.c_popup.open()
+        """
 
     def change_tag(self, tp):
 
@@ -1166,10 +1209,9 @@ class MyDataBaseApp(App):
         content.ids.link_input.text = ''
         content.im_source = self.NO_IMAGE
 
-    def open_tag_edit(self, title):
+    def open_entry_info(self, title):
 
-        content = self._load_template('popup','TagEdit')
-        content.sp_values = sorted(list(self.db_tags.keys()))
+        content = self._load_template('popup','EntryInfoEdit')
 
         # テンプレート情報の読み取り
         col_name = ['Title', 'InitialCharacter', 'Updated', 'FileNum', 'Size', 'Link']
@@ -1186,33 +1228,12 @@ class MyDataBaseApp(App):
         content.filenum = str(tmp_info[0][3])
         content.datasize = '{:.2f}'.format(tmp_info[0][4])
 
-        # 登録済みのタグ一覧を取得する
-        tag_list = {}
-        for key in sorted(self.db_tags.keys()):
-            tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
-        #print(tag_list)
- 
-        for key, value in sorted(tag_list.items(), key=lambda x:x[0]):
-
-            data_tags = self.dbm.get_items(col_name=key, title=title, convert=True)
-            #print(data_tags)
-
-            ni = TagEditLayout(title=key)
-            g_layout =GridLayout(cols=3)
-            tmp_value = [''] + value
-            for i in range(self.db_tags[key]):
-                
-                if i < len(data_tags):
-                    sp_text = str(data_tags[i])
-                else:
-                    sp_text = ''
-                sp = Spinner(text=sp_text, values=tmp_value, size_hint=(None, None), size=(200, 30))
-                g_layout.add_widget(sp)
-            ni.add_widget(g_layout)
-            content.ids.te_layout.add_widget(ni)
+        content.ids.te_layout.add_widget(self._create_tag_panel(title=title))
 
         self.popup = Popup(title='データ情報', content=content, size_hint=(None, None), size=(900, 760), auto_dismiss=False)
         self.popup.open()
+
+        self.popup_mode = 'entry_info'
 
     def change_entry_info(self, instance):
 
@@ -1237,17 +1258,9 @@ class MyDataBaseApp(App):
         values_dict['InitialCharacter'] = instance.ids.ic_btn.text
         values_dict['Link'] = instance.ids.link_input.text
 
-        #TODO: 「クラス名で必要な情報を取得する」というゴリ押しを何とかしたい。
         for child in instance.ids.te_layout.children:
-            if child.__class__.__name__ == 'TagEditLayout':
-                key = child.title
-                tmp_list = set([])
-                for ch in child.children:
-                    if ch.__class__.__name__ == 'GridLayout':
-                        for c in ch.children:
-                            if not c.text == '':
-                                tmp_list.add(c.text)
-                values_dict[key] = list(copy.deepcopy(tmp_list))
+            if child.__class__.__name__ == 'TabbedPanel':
+                values_dict.update(self._get_selected_tag(child))
 
         self.dbm.update_record(title=before_title, values_dict=values_dict)
 
@@ -1275,13 +1288,14 @@ class MyDataBaseApp(App):
 
     # データ登録ポップアップでのイベント
     def open_entry_popup(self):
-        self.popup_mode = 'data_entry'
 
         content = self._load_template('popup', 'DataEntry')
-        content.sp_values = sorted(list(self.db_tags.keys()))
+
         self.popup = Popup(title='データ登録', content=content, size_hint=(None, None), size=(900, 760), auto_dismiss=False)
         self.popup.open()
+
         self.op_is_active = True
+        self.popup_mode = 'data_entry'
 
     def close_entry_popup(self):
         self.close_popup()
@@ -1291,29 +1305,14 @@ class MyDataBaseApp(App):
 
     def add_new_entry(self, path):
 
-        tp = self.popup.content.ids.tp
-
-        # 登録済みのタグ一覧を取得する
-        tag_list = {}
-        for key in sorted(self.db_tags.keys()):
-            tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
-        #print(tag_list)
-
+        tp_data = self.popup.content.ids.tp_data
         th = TabbedPanelHeader(text='{}'.format(self.entry_count))
-        ne_layout = NewEntryLayout()
+        ne_layout = DataEntryLayout()
         ne_layout.ids.path_input.text = path
         ne_layout.ids.title_input.text = os.path.basename(path)
-        for key, value in sorted(tag_list.items(), key=lambda x:x[0]):
-            ni = TagEditLayout(title=key)
-            g_layout =GridLayout(cols=3)
-            tmp_value = sorted([''] + value)
-            for i in range(self.db_tags[key]):
-                sp = Spinner(values=tmp_value, size_hint=(None, None), size=(200, 30), font_size=14)
-                g_layout.add_widget(sp)
-            ni.add_widget(g_layout)
-            ne_layout.add_widget(ni)
+        ne_layout.add_widget(self._create_tag_panel())
         th.content = ne_layout
-        tp.add_widget(th)
+        tp_data.add_widget(th)
 
     def delete_entry(self, tp):
         cur_tab = tp.current_tab
@@ -1329,13 +1328,14 @@ class MyDataBaseApp(App):
             cur_tab.content.clear_widgets()
             tp.remove_widget(cur_tab)
 
-    def data_entry(self, tp, enable_move):
+    def data_entry(self, tp_data, enable_move):
         
         self.file_move = enable_move
         self.reserved_entry = []
+        msg_lines = []
         except_msg = []
 
-        for th in tp.tab_list:
+        for th in tp_data.tab_list:
 
             values_dict = {}
             
@@ -1354,20 +1354,20 @@ class MyDataBaseApp(App):
                 except_msg.append('{} : 同名タイトルが登録済みです'.format(th.text))
                 continue
             
+            msg_lines.append('({})'.format(th.text))
+            msg_lines.append('{} ({})'.format(title, ichar))
+
             values_dict['InitialCharacter'] = ichar
             values_dict['Link'] = link_str
 
-            #TODO: 「クラス名で必要な情報を取得する」というゴリ押しを何とかしたい。
             for child in th.content.children:
-                if child.__class__.__name__ == 'TagEditLayout':
-                    key = child.title
-                    tmp_list = set([])
-                    for ch in child.children:
-                        if ch.__class__.__name__ == 'GridLayout':
-                            for c in ch.children:
-                                if not c.text == '':
-                                    tmp_list.add(c.text)
-                    values_dict[key] = list(copy.deepcopy(tmp_list))
+                if child.__class__.__name__ == 'TabbedPanel':
+                    values_dict.update(self._get_selected_tag(child))
+
+            for key, val in sorted(values_dict.items(), key=lambda x:x[0]):
+                if not key in ['InitialCharacter', 'Link']:
+                    msg_lines.append('{}: {}'.format(key, val))
+            msg_lines.append('')
 
             self.reserved_entry.append({
                 'path':path,
@@ -1380,15 +1380,6 @@ class MyDataBaseApp(App):
             self.c_popup = Popup(title="警告", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
         else:
             msg = '次の内容で登録します。よろしいですか？'
-            msg_lines = []
-            for re in self.reserved_entry:
-                msg_lines.append('--- {} ---'.format(re['Title']))
-                for k,v in re['values_dict'].items():
-                    if type(v) is list:
-                        sub_msg = ','.join([str(r) for r in v])
-                    else:
-                        sub_msg = str(v)
-                    msg_lines.append('\t{}: {}'.format(k, sub_msg))
             content = YesNoPopUp(text=msg, subtext='\n'.join(msg_lines), yes=self.start_entry, no=self.cancel_entry)
             self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(600, 500), auto_dismiss=False)
         self.c_popup.open()

@@ -14,7 +14,7 @@ BoxLayout:
         text: 'ìoò^ì‡óeÇê›íËÇµÇƒâ∫Ç≥Ç¢ÅB'
     
     TabbedPanel:
-        id: tp
+        id: tp_data
         border: 20,20,20,20
         background_color: 1,1,1,1
         do_default_tab: False
@@ -48,12 +48,11 @@ BoxLayout:
         size_hint_y:None
         height: 40
         spacing: 5
-
-        Spinner:
-            id: spn
-            values: root.sp_values
+        Button:
+            text: 'É^ÉOìoò^'
             size_hint_x: None
-            width: 150
+            width: 100
+            on_release: app.add_tag_on_entry(tp_data, tag_input, ic_btn_tag);
         TextInput:
             id: tag_input
             text: ''
@@ -64,7 +63,6 @@ BoxLayout:
             on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r',''); root.input_text = self.text
             #multiline: False
             write_tab: False
-    
         Label:
             text: 'ì™ï∂éö'
             size_hint_x:None
@@ -77,11 +75,6 @@ BoxLayout:
             #text: app.selected_char
             text: ''
             on_press: app.select_initial(self)
-        Button:
-            text: 'É^ÉOìoò^'
-            size_hint_x: None
-            width: 100
-            on_release: app.add_tag_on_entry(spn.text, tag_input.text, ic_btn_tag.text); tag_input.text=''; ic_btn_tag.text=''
  
 	BoxLayout:
 		orientation: 'horizontal'
@@ -90,7 +83,7 @@ BoxLayout:
 		Button:
 			size_hint: .5, 1
 			text: 'ÉfÅ[É^ìoò^'
-			on_release: app.data_entry(root.ids.tp, root.ids.enable_move.active)
+			on_release: app.data_entry(root.ids.tp_data, root.ids.enable_move.active)
  
 		Button:
 			size_hint: .5, 1
