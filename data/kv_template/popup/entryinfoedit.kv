@@ -5,8 +5,6 @@ BoxLayout:
 	orientation: 'vertical'
     spacing: 10
 
-    sp_values: []
-
     before_title: '-'
     updated:'-'
     filenum:'-'
@@ -77,16 +75,30 @@ BoxLayout:
                 text:'ファイル数: {}'.format(root.filenum)
             Label:
                 text:'サイズ: {}MB'.format(root.datasize)
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            canvas.before:
+                Color:
+                    rgba: 0.25, 0.5, 0.25, 0.5
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+            Label:
+                text:'オプション'
+                color: 0, 0.8, 0.4, 1
 
     BoxLayout:
         size_hint_y:None
         height: 40
         spacing: 5
-        Spinner:
-            id: spn
-            values: root.sp_values
+
+        Button:
+            text: 'タグ登録'
             size_hint_x: None
-            width: 150
+            width: 100
+            on_release: app.add_tag_on_entry(root, tag_input, ic_btn_tag);
+
         TextInput:
             id: tag_input
             text: ''
@@ -110,11 +122,6 @@ BoxLayout:
             #text: app.selected_char
             text: ''
             on_press: app.select_initial(self)
-        Button:
-            text: 'タグ登録'
-            size_hint_x: None
-            width: 100
-            on_release: app.add_tag_on_entry(spn.text, tag_input.text, ic_btn_tag.text); tag_input.text=''; ic_btn_tag.text=''
  
 	BoxLayout:
 		orientation: 'horizontal'

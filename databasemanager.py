@@ -4,6 +4,7 @@ from pathlib import Path
 import sqlite3, os, copy, glob, time, threading, datetime, shutil, logging, json
 from itertools import chain
 from PIL import Image, ImageSequence
+import my_utils as mutl
 
 LIST_DELIMITER = ';'
 sqlite3.dbapi2.converters['DATETIME'] = sqlite3.dbapi2.converters['TIMESTAMP']
@@ -15,7 +16,6 @@ class DataBaseManager():
     logger = logging.getLogger('MyDBApp') 
 
     DATABASE_NAME = 'database.sqlite'
-    OPTION_NAME = 'option.json'
 
     FILE_ENCODING = 'utf-8'
 
@@ -105,13 +105,9 @@ class DataBaseManager():
         self.connection = sqlite3.connect(db_path, detect_types = sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
         self.cursor = self.connection.cursor()
 
-        opt_name = os.path.join(self.db_root, self.OPTION_NAME)
-        with open(opt_name, 'r', encoding=self.FILE_ENCODING) as opt_file:
-            max_asign_num = json.load(opt_file)
-
-        return max_asign_num
+        return
     
-    def create_database(self, db_root, option={}):
+    def create_database(self, db_root, db_option={}):
         """
         概要:
             新規データベースを作成する。
@@ -129,13 +125,6 @@ class DataBaseManager():
         if os.path.exists(db_path):
             return False
 
-        # オプションの分離
-        additional_tags = {}
-        max_asign_num = {}
-        for key, value in option.items():
-            additional_tags[key] = value[0]
-            max_asign_num[key] = value[1]
-
         # データベースとデータ置き場の作成
         self.db_root = db_root
         self.connection = sqlite3.connect(db_path, detect_types = sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
@@ -152,7 +141,7 @@ class DataBaseManager():
         # Mainテーブルを作成する。
         table_name = 'MainTable'
         table_columns = copy.deepcopy(self.TEMPLATE_MAIN_COLUMN)
-        table_columns.update(additional_tags)
+        table_columns.update(db_option)
         tmp_str = ','.join(['{} {}'.format(key, value) for key,value in table_columns.items()]) 
         sql = 'create table if not exists {} ({})'.format(table_name, tmp_str)
         
@@ -160,24 +149,16 @@ class DataBaseManager():
         self.cursor.execute(sql)
 
         # 追加タグ記録用のテーブルを作成する
-        for key in additional_tags.keys():
+        for key in db_option.keys():
             table_name = key
             tmp_str = ','.join(['{} {}'.format(key, value) for key,value in self.TEMPLATE_TAGS_COLUMN.items()]) 
             sql = 'create table if not exists {} ({})'.format(table_name, tmp_str)
             self.logger.debug(sql)
             self.cursor.execute(sql)
 
-        opt_name = os.path.join(self.db_root, self.OPTION_NAME)
-        with open(opt_name, 'w', encoding=self.FILE_ENCODING) as opt_file:
-            json.dump(max_asign_num, opt_file)
-
         self.connection.commit()
 
         return True
-
-    def delete_database(self):
-        self.close()
-
 
 
     # MainTable操作
@@ -240,7 +221,7 @@ class DataBaseManager():
                 break
 
             # ファイル一覧取得
-            file_list = self.search_files(src_path)
+            file_list = mutl.search_files(src_path, self.SUPPORTED_EXT)
             #file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(src_path, "*." + ext)) for ext in self.SUPPORTED_EXT])))
 
             # ファイルがない場合
@@ -720,7 +701,7 @@ class DataBaseManager():
         #tmp_list = sorted(glob.glob(os.path.join(file_dir, "*")))
         #file_list = [os.path.basename(r) for r in tmp_list]
 
-        tmp_list = self.search_files(file_dir)
+        tmp_list = mutl.search_files(file_dir, self.SUPPORTED_EXT)
         #tmp_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(file_dir, "*." + ext)) for ext in self.SUPPORTED_EXT])))
         
         file_list = [os.path.basename(r) for r in tmp_list]
@@ -740,22 +721,6 @@ class DataBaseManager():
             if not x[1] == 'MainTable':
                 table_list.append(x[1])
         return table_list
-
-    """
-    def get_tag_items(self, table, convert=False):
-
-        sql = 'SELECT Name FROM {}'.format(table)
-        self.logger.debug(sql)
-        ret = self.cursor.execute(sql)
-
-        if convert:
-            tmp_list = []
-            for row in ret.fetchall():
-                tmp_list.append(row[0])
-            return tmp_list
-        else:
-            return ret.fetchall()
-    """
 
     def add_tag(self, table, values):
         """
@@ -850,6 +815,7 @@ class DataBaseManager():
         return True
 
     def delete_tags(self, table, names):
+
         for name in names:
             sql = 'DELETE FROM {} WHERE Name="{}"'.format(table, name)
 
@@ -862,8 +828,23 @@ class DataBaseManager():
 
             self.logger.debug(sql)
             self.cursor.execute(sql)
+            self.connection.commit()
 
-        self.connection.commit()
+            # MainTableも変更しに行く
+            update_list = [] # tuple(Title, NewList)
+            sql = 'SELECT Title,{} FROM MainTable'.format(table)
+            ret = self.cursor.execute(sql)
+
+            for row in ret.fetchall():
+                title = row[0]
+                tmp_list = self._convert_list(row[1])
+
+                if name in tmp_list:
+                    tmp_list.remove(name)
+                    update_list.append((title,{table:copy.deepcopy(tmp_list)}))
+            for ul in update_list:
+                self.update_record(title=ul[0],values_dict=ul[1])
+
         return
 
     def tag_is_exist(self, table, name):
@@ -1069,8 +1050,3 @@ class DataBaseManager():
         """
         shutil.make_archive(dst_dir, 'zip', dst_dir)
         shutil.rmtree(dst_dir)
-
-    def search_files(self, path):
-        p = Path(path)
-        file_list = list(chain.from_iterable([p.glob("*." + ext) for ext in self.SUPPORTED_EXT]))
-        return sorted([str(r) for r in file_list])
