@@ -28,12 +28,14 @@ DataBaseScreen:
                         text:'êVãKìoò^'
                         size_hint_x:None
                         width: 80
-                        on_release: app.open_dbc_popup(False)
+                        #on_release: app.open_dbc_popup(False)
+                        on_release: app.open_main_popup(self, mode='create_db', load_mode=False)
                     Button:
                         text:'ì«Ç›çûÇ›'
                         size_hint_x:None
                         width: 80
-                        on_release: app.open_dbc_popup(True)
+                        #on_release: app.open_dbc_popup(True)
+                        on_release: app.open_main_popup(self, mode='create_db', load_mode=True)
         
         ScrollView:
             StackLayout:

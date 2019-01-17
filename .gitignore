@@ -2,3 +2,4 @@ __pycache__
 data/__tmp__
 *.log
 database.json
+mydatabase.ini

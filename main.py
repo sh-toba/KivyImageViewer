@@ -136,6 +136,8 @@ class MyDataBaseApp(App):
     FILE_ENCODING = 'utf-8'
     HEADER_OPT_COLOR = [0.128, 0.128, 0.128, 1]
     TRANSITION_SPEED = .4
+    MAX_JUMP_BUTTON = 9 # 配置するジャンプボタン数
+    GIF_SPEED_RANGE = (10,40)
     NO_IMAGE = StringProperty('data/noimage.png')
     IC_FILTER_MAP = {
         'あ':['あ','い','う','え','お'],
@@ -167,14 +169,46 @@ class MyDataBaseApp(App):
         'サムネイルビュー',
         'イメージビューワー'
     ]
+    # ポップアップ情報の事前設定
+    POPUP_SETTINGS = {
+        'filter':{
+            'title':'フィルタ',
+            'size':(800,600),
+            'content':'FilterPopUp',
+            'available':['DataBaseItemsView','ThumbnailView']
+        },
+        'create_db':{
+            'title':'データベース作成',
+            'size':(750,350),
+            'content':'DBCreate',
+            'available':['DataBaseList']
+        },
+        'tag_entry':{
+            'title':'タグ編集',
+            'size':(900,760),
+            'content':'TagEntry',
+            'available':['DataBaseItemsView']
+        },
+        'entry_info':{
+            'title':'データ情報',
+            'size':(900,760),
+            'content':'EntryInfoEdit',
+            'available':['DataBaseItemsView']
+        },
+        'data_entry':{
+            'title':'データ登録',
+            'size':(900,760),
+            'content':'DataEntry',
+            'available':['DataBaseItemsView']
+        }
+    }
     DATABASE_LIST = 'database.json'
 
-    # TODO: 設定項目 - 後々、設定ファイルから読み込むようにする
-    max_thumnail = 50 # 配置する最大サムネイル数
-    max_jump_button = 9 # 配置するジャンプボタン数
-    view_size = NumericProperty(1)
-    gif_speed = NumericProperty(0.05)
-    save_view_setting = False # 前回設定の保存
+    my_config = {
+        'max_thumbnail':50,
+        'init_thumbnail_filter':'Nothing',
+        'gif_speed_span':10
+    }
 
     # ヘッダー・フッターメニュー用
     screen_title = StringProperty()
@@ -195,6 +229,9 @@ class MyDataBaseApp(App):
     entry_count = 0
 
     # ThumbnailView用
+    view_size = NumericProperty(1)
+    gif_speed = NumericProperty(0.05)
+
     loaded_title = StringProperty() # 表示中の画像タイトル TODO:GUI上に他情報も併せて表示する？
     loaded_file_dir = ''
     loaded_file_list = ListProperty([]) # 読み込んでいる画像ファイルの絶対パス
@@ -244,10 +281,22 @@ class MyDataBaseApp(App):
     # thread
     threads = {}
 
+    def build_config(self, config):
+        conf_path = os.path.join(self.CURRENT_DIR, 'data', 'config', 'default_conf.ini')
+        config.read(conf_path)
+
+    def build_settings(self, settings):
+        setting_path = os.path.join(self.CURRENT_DIR, 'data', 'config', 'my_setting.json')
+        settings.add_json_panel('Settings', self.config, filename=setting_path)
+
     def build(self):
 
         self.logger.debug('---------Start MyDataBaseApp--------')
         self.title = self.APP_TITLE
+
+        self.my_config['max_thumbnail'] = self.config.getint("section1","max_thumbnail")
+        self.my_config['init_thumbnail_filter'] = self.config.get("section1","init_thumbnail_filter")
+        self.my_config['gif_speed_span'] = self.config.getint("section1","gif_speed_span")
 
         Window.bind(on_dropfile = self._on_drop_files)
 
@@ -300,8 +349,119 @@ class MyDataBaseApp(App):
         self.reload_db_list()
 
     def close_popup(self):
+
+        if self.popup_mode == 'data_entry':
+            self.op_is_active = False
+            self.entry_count = 0
+            self.error_entry = []
+        
         self.popup.dismiss()
         self.popup_mode = 'close'
+
+    def open_main_popup(self, instance, **kargs):
+
+        """
+        メインの操作となるポップアップへの移行を一つの関数として管理する。
+        関数の数がいたずらに増えるのを防ぐため。
+        """
+
+        if not 'mode' in kargs.keys():
+            return
+        else:
+            mode = kargs['mode']
+
+        # すでに開いていれば閉じる
+        if self.popup_mode != 'close':
+            self.close_popup()
+
+        # ポップアップを開いていいスクリーンかどうかを確認する
+        sm_cur = self.root.ids.sm.current
+        if not sm_cur in self.POPUP_SETTINGS[mode]['available']:
+            return
+
+        # 基本的なレイアウトを読み込む
+        p_title = self.POPUP_SETTINGS[mode]['title']
+        p_size = self.POPUP_SETTINGS[mode]['size']
+        content = self._load_template('popup', self.POPUP_SETTINGS[mode]['content'])
+
+        # モード別のレイアウト作成
+        if mode == 'filter':
+            # TODO: 似たようなloopをまとめる
+            tp = content.ids.tp
+            tp.clear_tabs()
+            if sm_cur == 'DataBaseItemsView':
+                tag_list = {}
+                for key in self.db_tag_tables:
+                    tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
+                for key, val_list in sorted(tag_list.items(), key=lambda x:x[0]):
+                    th = TabbedPanelHeader(text=key)
+                    filter_items = ScrollStack()
+                    for val in val_list:
+                        filter_items.ids.fi.add_widget(MyCheckBox(text=val))
+                    th.content = filter_items
+                    tp.add_widget(th)
+
+            elif sm_cur == 'ThumbnailView':
+                th = TabbedPanelHeader(text='その他')
+                #filter_items = self._load_template('MyCheckBoxs')
+                filter_items = ScrollStack()
+                filter_items.ids.fi.add_widget(MyCheckBox(text='お気に入り'))
+                filter_items.ids.fi.add_widget(MyCheckBox(text='チャプター'))
+                th.content = filter_items
+                tp.add_widget(th)
+
+        elif mode == 'create_db':
+            if not 'load_mode' in kargs.keys():
+                self.dbc_load_mode = True
+            else:
+                self.dbc_load_mode = kargs['load_mode']
+
+        elif mode == 'tag_entry':
+            # TODO: 似たようなloopをまとめる
+            tp = content.ids.tp
+            tp.clear_tabs()
+            tag_list = {}
+            for key in self.db_tag_tables:
+                tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
+            for key, val_list in sorted(tag_list.items(), key=lambda x:x[0]):
+                th = TabbedPanelHeader(text=key)
+                filter_items = ScrollStack()
+                for val in val_list:
+                    filter_items.ids.fi.add_widget(TagEntryItem(text=val))
+                th.content = filter_items
+                tp.add_widget(th)
+
+        elif mode == 'entry_info':
+
+            if not 'title' in kargs.keys():
+                return
+            else:
+                title = kargs['title']
+
+            col_name = ['Title', 'InitialCharacter', 'Updated', 'FileNum', 'Size', 'Link']
+            tmp_info = self.dbm.get_items(col_name=col_name, title=title, convert=False)
+            content.ids.title_input.text = tmp_info[0][0]
+            content.ids.ic_btn.text = tmp_info[0][1]
+            content.ids.link_input.text = tmp_info[0][5]
+            content.before_title = tmp_info[0][0]
+            content.updated = tmp_info[0][2].strftime('%Y-%m-%d %H:%M:%S')
+            content.filenum = str(tmp_info[0][3])
+            content.datasize = '{:.2f}'.format(tmp_info[0][4])
+            content.ids.te_layout.add_widget(self._create_tag_panel(title=title))
+
+        elif mode == 'data_entry':
+            self.op_is_active = True
+
+        else:
+            return
+
+        # 内部モードを更新してポップアップを開く
+        self.popup_mode = mode
+        self.popup = Popup(title=p_title, content=content, size_hint=(None, None), size=p_size, auto_dismiss=False)
+        self.popup.open()
+
+        return
+
 
     def close_confirm_popup(self):
         
@@ -331,19 +491,13 @@ class MyDataBaseApp(App):
         
         self.c_popup.dismiss()
 
+
     def select_initial(self, ic_btn):
         self.ic_btn = ic_btn
         self.ic_popup.open()
 
     def set_initial_character(self, instance):
-        """
-        content = self.popup.content
 
-        if self.op_is_active:
-            content.ids.tp.current_tab.content.ids.ic_btn.text = instance.text
-        else:
-            content.ids.ic_btn.text = instance.text
-        """
         self.ic_btn.text = instance.text
         
         self.ic_popup.dismiss()
@@ -380,7 +534,8 @@ class MyDataBaseApp(App):
             elif mode == 'tag':
                 height = 40
                 tmp_button = Button(text='タグ登録',size_hint_x=None,width=80, background_color=self.HEADER_OPT_COLOR)
-                tmp_button.bind(on_release=self.open_tag_entry)
+                #tmp_button.bind(on_release=self.open_tag_entry)
+                tmp_button.bind(on_release=partial(self.open_main_popup, mode='tag_entry'))
                 option_layout.add_widget(tmp_button)
 
                 tmp_button2 = Button(text='CSV出力',size_hint_x=None,width=90, background_color=self.HEADER_OPT_COLOR)
@@ -456,6 +611,7 @@ class MyDataBaseApp(App):
             sm.current = self.APP_SCREENS[prev_idx]
 
 
+    """
     # フィルタ機能
     def open_filter_popup(self):
 
@@ -500,6 +656,7 @@ class MyDataBaseApp(App):
             
         self.popup = Popup(title='フィルタ', content=content, size_hint=(None, None), size=(800, 600), auto_dismiss=True)
         self.popup.open()
+    """
 
     def adapt_filter(self, tp, eo_active):
 
@@ -568,7 +725,8 @@ class MyDataBaseApp(App):
         sm = self.root.ids.sm
         if sm.current == 'DataBaseItemsView':
             if self.popup_mode == 'close':
-                self.open_entry_popup()
+                #self.open_entry_popup()
+                self.open_main_popup(None, mode='data_entry')
 
             if self.popup_mode == 'data_entry':
                 if os.path.isdir(path):
@@ -581,10 +739,10 @@ class MyDataBaseApp(App):
                     self.popup.content.im_source = path
         
         if sm.current == 'ThumbnailView':
-            if self.popup_mode == 'close':
+            if not self.op_is_active:
                 self.open_file_entry_popup()
 
-            if self.popup_mode == 'file_entry':
+            if self.op_is_active:
                 if os.path.isdir(path):
                     #file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(path, "*." + ext)) for ext in self.dbm.SUPPORTED_EXT])))
                     file_list = mutl.search_files(path, self.dbm.SUPPORTED_EXT)
@@ -656,6 +814,7 @@ class MyDataBaseApp(App):
             size_str = '{:.1f}'.format(info['size'])
             db_list_layout.add_widget(DBInfo(title=key, data_num=info['num'], data_size=size_str))
         
+    """
     def open_dbc_popup(self, load_mode=False):
         self.dbc_load_mode = load_mode
 
@@ -663,6 +822,7 @@ class MyDataBaseApp(App):
         content = self._load_template('popup', 'DBCreate')
         self.popup = Popup(title="データベース登録", content=content, size_hint=(None, None), size=(700, 350), auto_dismiss=False)
         self.popup.open()
+    """
 
     def create_db(self, title, path, tag_types_s):
 
@@ -851,7 +1011,8 @@ class MyDataBaseApp(App):
                 self.dbm.update_record(title=instance.title, values_dict={'IsFavorite':int(instance.is_favorite)})
 
             elif self.item_select_mode == 'tag':
-                self.open_entry_info(instance.title)
+                #self.open_entry_info(instance.title)
+                self.open_main_popup(None, mode='entry_info', title=instance.title)
 
             elif self.item_select_mode == 'link':
                 url = self.dbm.get_items('Link', title=instance.title, convert=True)
@@ -989,6 +1150,7 @@ class MyDataBaseApp(App):
 
 
     # タグ操作
+    """
     def open_tag_entry(self, instance):
 
         sm = self.root.ids.sm
@@ -1024,7 +1186,8 @@ class MyDataBaseApp(App):
         self.popup.open()
 
         self.popup_mode = 'tag_entry'
-    
+    """
+
     def reflect_tag(self, tag_item, is_active):
 
         content = self.popup.content
@@ -1209,6 +1372,7 @@ class MyDataBaseApp(App):
         content.ids.link_input.text = ''
         content.im_source = self.NO_IMAGE
 
+    """
     def open_entry_info(self, title):
 
         content = self._load_template('popup','EntryInfoEdit')
@@ -1234,6 +1398,7 @@ class MyDataBaseApp(App):
         self.popup.open()
 
         self.popup_mode = 'entry_info'
+    """
 
     def change_entry_info(self, instance):
 
@@ -1287,6 +1452,7 @@ class MyDataBaseApp(App):
 
 
     # データ登録ポップアップでのイベント
+    """
     def open_entry_popup(self):
 
         content = self._load_template('popup', 'DataEntry')
@@ -1302,6 +1468,7 @@ class MyDataBaseApp(App):
         self.op_is_active = False
         self.entry_count = 0
         self.error_entry = []
+    """
 
     def add_new_entry(self, path):
 
@@ -1406,6 +1573,10 @@ class MyDataBaseApp(App):
     # ThumbnailViewイベント
     def go_thumbnailview(self):
         
+        init_opt = self.my_config['init_thumbnail_filter']
+        if init_opt != 'Nothing':
+            self.tv_filter['options'][init_opt] = True
+
         if not self.reload_data():
             return
         
@@ -1478,22 +1649,6 @@ class MyDataBaseApp(App):
                 else:
                     tmp_set &= self.file_options[opt_key]
 
-        """
-        if filter_option is None:
-            self.view_file_index = list(range(self.loaded_file_num))
-        else:
-            if enable_or:
-                tmp_list = set([])
-                for opt, flag in filter_option.items():
-                    if flag:
-                        tmp_list |= self.file_options[opt]
-            else:
-                tmp_list = set(range(self.loaded_file_num))
-                for opt, flag in filter_option.items():
-                    if flag:
-                        tmp_list &= self.file_options[opt]
-            self.view_file_index = sorted(tmp_list)
-        """
         self.view_file_index = sorted(tmp_set)
         self.view_file_num = len(self.view_file_index)
 
@@ -1507,7 +1662,7 @@ class MyDataBaseApp(App):
         screen.ids.fe_btn.disabled = (self.view_file_num == self.loaded_file_num)
 
         self.page_index = 0
-        self.page_num = math.ceil(self.view_file_num / self.max_thumnail)
+        self.page_num = math.ceil(self.view_file_num / self.my_config['max_thumbnail'])
 
         self.change_thumbnailview('1')
 
@@ -1551,8 +1706,8 @@ class MyDataBaseApp(App):
 
         self.page_index = next_index
 
-        st_idx = (self.page_index-1) * self.max_thumnail
-        ed_idx = st_idx + self.max_thumnail-1
+        st_idx = (self.page_index-1) * self.my_config['max_thumbnail']
+        ed_idx = st_idx + self.my_config['max_thumbnail']-1
         if ed_idx >= self.view_file_num:
             ed_idx = self.view_file_num-1
         self.page_range[0] = st_idx
@@ -1573,12 +1728,9 @@ class MyDataBaseApp(App):
         self.threads['load_thumbnails'].start()
 
     def open_jump_popup(self):
-
-        self.popup_mode = 'jump'
-        
         content = JumpPopUp()
-        self.popup = Popup(title='ページ移動', content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=True)
-        self.popup.open()
+        self.c_popup = Popup(title='ページ移動', content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=True)
+        self.c_popup.open()
 
     def jump_thumbnail(self, text):
         self.change_thumbnailview(text)
@@ -1590,11 +1742,11 @@ class MyDataBaseApp(App):
         layout.clear_widgets()
 
         layout.add_widget(ThumbnailJump(text='<'))
-        if self.max_jump_button >= self.page_num:
+        if self.MAX_JUMP_BUTTON >= self.page_num:
             for i in range(self.page_num):
                 layout.add_widget(ThumbnailJump(text='{}'.format(i+1)))
         else:
-            change_num = self.max_jump_button - 2
+            change_num = self.MAX_JUMP_BUTTON - 2
             if self.page_index < change_num:
                 for i in range(change_num):
                     layout.add_widget(ThumbnailJump(text='{}'.format(i+1)))
@@ -1696,33 +1848,6 @@ class MyDataBaseApp(App):
 
         self.dbm.update_record(self.loaded_title, save_dict)
 
-
-    # ファイルの追加
-    def open_file_entry_popup(self):
-        self.popup_mode = 'file_entry'
-        self.entry_files = []
-
-        msg = '次の画像を追加します。よろしいですか？'
-        content = YesNoPopUp(text=msg, subtext='', yes=self.start_file_entry, no=self.close_popup)
-        self.popup = Popup(title="確認", content=content, size_hint=(None, None), size=(600, 500), auto_dismiss=False)
-        self.popup.open()
-        self.op_is_active = True
-
-    def add_file_entry(self, path):
-        self.entry_files.append(path)
-        self.popup.content.subtext += (os.path.basename(path) + '\n')
-
-    def start_file_entry(self):
-
-        if len(self.entry_files) == 0:
-            return
-
-        self.error_entry = []
-        if self.dbm.add_files(self.loaded_title, self.entry_files):
-            self.dbm.start_file_operation()
-            self._open_progress('copy')
-
-
     # サムネイル選択モード
     def select_thumbnail(self, thumbnail):
 
@@ -1796,61 +1921,6 @@ class MyDataBaseApp(App):
             elif self.item_select_mode == 'chapter':
                 thumbnail.is_chapter ^= True
 
-    """
-        else:
-            # 範囲選択がONの場合
-            if self.range_selectable:
-
-                # 基準位置が未選択
-                if self.range_select_base is None:
-                    
-                    thumbnail.is_based = True
-                    self.range_select_base = im_index
-                
-                # 基準位置が選択済み
-                else:
-
-                    if self.range_select_base < im_index:
-                        s_index = self.range_select_base
-                        e_index = im_index
-                    else:
-                        s_index = im_index
-                        e_index = self.range_select_base
-                    
-                    if self.item_select_mode == 'select':
-                        #self.selected_file_index[s_index:e_index+1] = True
-                        for idx in range(s_index,e_index+1):
-                            self.selected_file_index.add(idx)
-                    else:
-                        for idx in range(s_index,e_index+1):
-                            self.file_options[self.item_select_mode].add(idx)
-
-                        self._save_file_options()
-                    
-                    self.range_select_base = None
-                    self._update_all_thumbnail_color()
-
-            # 単一選択
-            else:
-                if self.item_select_mode == 'select':
-                    #self.selected_file_index[im_index] ^= True
-                    if im_index in self.selected_file_index:
-                        self.selected_file_index.remove(im_index)
-                    else:
-                        self.selected_file_index.add(im_index)
-                    thumbnail.is_selected ^= True 
-                else:
-                    if im_index in self.file_options[self.item_select_mode]:
-                        self.file_options[self.item_select_mode].remove(im_index)
-                    else:
-                        self.file_options[self.item_select_mode].add(im_index)
-                    self._save_file_options()
-                    if self.item_select_mode == 'favorite':
-                        thumbnail.is_favorite ^= True
-                    elif self.item_select_mode == 'chapter':
-                        thumbnail.is_chapter ^= True
-        """
-
     def change_range_option(self, instance):
         self.range_selectable ^= True
 
@@ -1867,6 +1937,32 @@ class MyDataBaseApp(App):
             self._save_file_options()
 
         self._update_all_thumbnail_color()
+
+    # ファイルの追加
+    def open_file_entry_popup(self):
+        self.entry_files = []
+
+        msg = '次の画像を追加します。よろしいですか？'
+        content = YesNoPopUp(text=msg, subtext='', yes=self.start_file_entry, no=self.close_confirm_popup)
+        self.c_popup = Popup(title="確認", content=content, size_hint=(None, None), size=(600, 500), auto_dismiss=False)
+        self.c_popup.open()
+        self.op_is_active = True
+
+    def add_file_entry(self, path):
+        self.entry_files.append(path)
+        self.c_popup.content.subtext += (os.path.basename(path) + '\n')
+
+    def start_file_entry(self):
+
+        if len(self.entry_files) == 0:
+            return
+
+        self.c_popup.dismiss()
+
+        self.error_entry = []
+        if self.dbm.add_files(self.loaded_title, self.entry_files):
+            self.dbm.start_file_operation()
+            self._open_progress('copy')
 
 
     # ファイルの削除
@@ -1985,12 +2081,13 @@ class MyDataBaseApp(App):
 
     def change_anim_speed(self, option):
 
+        fps = 1 / self.gif_speed
         if option == 'up':
-            tmp_speed = self.gif_speed*0.5
-            self.gif_speed = tmp_speed if (tmp_speed > 0.025) else 0.025
+            tmp_fps = fps + self.my_config['gif_speed_span']
+            self.gif_speed = (1/tmp_fps) if tmp_fps <= self.GIF_SPEED_RANGE[1] else (1/self.GIF_SPEED_RANGE[1])
         elif option == 'down':
-            tmp_speed = self.gif_speed*2
-            self.gif_speed = tmp_speed if (tmp_speed < 0.1) else 0.1
+            tmp_fps = fps - self.my_config['gif_speed_span']
+            self.gif_speed = (1/tmp_fps) if tmp_fps >= self.GIF_SPEED_RANGE[0] else (1/self.GIF_SPEED_RANGE[0])
 
 
     def view_help(self, instance):
@@ -2038,7 +2135,7 @@ class MyDataBaseApp(App):
     def _open_progress(self, p_type):
         if p_type == 'copy':
             content = ProgressPopUp()
-            self.p_popup = Popup(title="データコピー中", content=content, size_hint=(None, None), size=(600, 200), auto_dismiss=False)
+            self.p_popup = Popup(title="データコピー中", content=content, size_hint=(None, None), size=(800, 200), auto_dismiss=False)
         elif p_type == 'delete':
             content = Label(text='しばらくお待ちください。', font_size=16)
             self.p_popup = Popup(title="データ削除中", content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=False)
@@ -2075,7 +2172,8 @@ class MyDataBaseApp(App):
                 if len(self.error_entry) != 0:
                     msg_lines.append('[登録失敗]')
                     msg_lines += self.error_entry
-                self.close_entry_popup()
+                if self.popup_mode == 'data_entry':
+                    self.close_popup()
                     
             elif mode == 'delete': 
                 self.op_is_active = False

@@ -1,0 +1,23 @@
+[
+    {
+        "title":"Max thumbnail view",
+        "section":"section1",
+        "key":"max_thumbnail",
+        "type":"options",
+        "options":["50","100","150","200"]
+    },
+    {
+        "title":"Initial thumbnail filter",
+        "section":"section1",
+        "key":"init_thumbnail_filter",
+        "type":"options",
+        "options":["Nothing","favorite","chapter"]
+    },
+    {
+        "title":"Gif speed span",
+        "section":"section1",
+        "key":"gif_speed_span",
+        "type":"options",
+        "options":["2","5","10"]
+    }
+]

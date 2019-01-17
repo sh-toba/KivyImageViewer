@@ -68,7 +68,8 @@ BoxLayout:
                 icon: 'data/icons/filter.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
-                on_release: app.open_filter_popup()
+                #on_release: app.open_filter_popup()
+                on_release: app.open_main_popup(self, mode='filter')
                 color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
 
             ActionToggleButton:
