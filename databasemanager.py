@@ -58,7 +58,11 @@ class DataBaseManager():
         'task_index':0,
         'title':'',
         'file_num':0,
-        'done_file':0
+        'done_file':0,
+        'all_size':0,
+        'done_size':0,
+        'speed':0,
+        'remaining_time':0.0
         }
     is_cancel = False
 
@@ -221,7 +225,8 @@ class DataBaseManager():
                 break
 
             # ファイル一覧取得
-            file_list = mutl.search_files(src_path, self.SUPPORTED_EXT)
+            file_list, file_size = mutl.search_files(src_path, self.SUPPORTED_EXT)
+            file_size /= (1024 * 1024)
             #file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(src_path, "*." + ext)) for ext in self.SUPPORTED_EXT])))
 
             # ファイルがない場合
@@ -251,6 +256,7 @@ class DataBaseManager():
                 'operation':op_mode,
                 'title':title,
                 'src_list':file_list,
+                'src_size':file_size,
                 'dst_path':os.path.join(self.data_dir, title),
                 'init_num':0,
                 'init_size':0.0
@@ -267,13 +273,19 @@ class DataBaseManager():
 
         self.file_op_tasks = []
 
+        file_size = 0
+        for fl in file_list:
+            file_size += os.path.getsize(fl)
+        file_size /= (1024 * 1024)
+
         init_info = self.get_items(['FileNum','Size'], title=title)
 
         # ファイルコピーのタスクを作成する
         self.file_op_tasks.append({
             'operation':'copy',
             'title':title,
-            'src_list':sorted(file_list),
+            'src_list':sorted(file_list, key=mutl.numericalSort),
+            'src_size':file_size,
             'dst_path':os.path.join(self.data_dir, title),
             'init_num':init_info[0][0],
             'init_size':init_info[0][1]
@@ -337,6 +349,7 @@ class DataBaseManager():
             'operation':'delete',
             'title':title,
             'src_list':sorted(file_idx),
+            'src_size':0, # TODO: 現状、使っていない
             'dst_path':os.path.join(self.data_dir, title),
             'init_num':init_info['FileNum'][0][0],
             'init_size':init_info['Size'][0][0],
@@ -375,7 +388,7 @@ class DataBaseManager():
         if len(insert_index) == 0:
             return
 
-        title_dir, file_list = self.get_file_list(title)
+        title_dir, file_list, _ = self.get_file_list(title)
         init_info = self.get_items(['favorite','chapter'], title=title, convert=True)
 
         init_favorite = set([])
@@ -506,6 +519,13 @@ class DataBaseManager():
 
         self.file_op_progress['task_num'] = len(self.file_op_tasks)
 
+        self.file_op_progress['done_size'] = 0
+        self.file_op_progress['all_size'] = 0
+        for ftask in self.file_op_tasks:
+            self.file_op_progress['all_size'] += ftask['src_size']
+
+        start = time.time()
+
         for t_idx, ftask in enumerate(self.file_op_tasks):
 
             # 初期設定
@@ -538,7 +558,8 @@ class DataBaseManager():
                         if not os.path.exists(thum_dir):
                             os.mkdir(thum_dir)
                         self._gif_to_zip(file_path, new_path, thum_dir)
-                        values_dict['Size'] += (os.path.getsize(new_path + '.zip') / (1024*1024))
+                        fsize = os.path.getsize(new_path + '.zip') / (1024*1024)
+                        values_dict['Size'] += fsize
                     else:
                         # TODO: 上書き操作は仮で禁止にしている
                         new_path = new_path + ext
@@ -547,9 +568,20 @@ class DataBaseManager():
                                 shutil.move(file_path, new_path)
                             elif op_mode == 'copy':
                                 shutil.copyfile(file_path, new_path)
-                        values_dict['Size'] += (os.path.getsize(new_path) / (1024*1024))
+                        fsize = os.path.getsize(new_path) / (1024*1024)
+                        values_dict['Size'] += fsize
                     values_dict['FileNum'] += 1
                     self.file_op_progress['done_file'] += 1
+
+                    # 処理速度、残り時間予測
+                    self.file_op_progress['done_size'] += fsize
+                    process_time = time.time() - start
+                    if process_time != 0:
+                        self.file_op_progress['speed'] = self.file_op_progress['done_size']/process_time # [MiB/s]
+
+                    if self.file_op_progress['speed'] != 0:
+                        self.file_op_progress['remaining_time'] = (self.file_op_progress['all_size'] - self.file_op_progress['done_size']) / self.file_op_progress['speed']
+
                 values_dict['Updated'] = datetime.datetime.now()
 
             elif op_mode == 'delete':
@@ -557,7 +589,7 @@ class DataBaseManager():
                 # deleteの場合はindexのリストが渡されている想定
                 # renameも兼ねるため、結局trg_path内を全探索する
 
-                title_dir, file_list = self.get_file_list(title)
+                title_dir, file_list, _ = self.get_file_list(title)
                 
                 new_favorite = []
                 new_chapter = []
@@ -701,12 +733,12 @@ class DataBaseManager():
         #tmp_list = sorted(glob.glob(os.path.join(file_dir, "*")))
         #file_list = [os.path.basename(r) for r in tmp_list]
 
-        tmp_list = mutl.search_files(file_dir, self.SUPPORTED_EXT)
+        tmp_list, file_size = mutl.search_files(file_dir, self.SUPPORTED_EXT)
         #tmp_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(file_dir, "*." + ext)) for ext in self.SUPPORTED_EXT])))
         
         file_list = [os.path.basename(r) for r in tmp_list]
 
-        return file_dir, file_list
+        return file_dir, file_list, file_size
 
 
     # 追加項目操作

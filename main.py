@@ -745,7 +745,7 @@ class MyDataBaseApp(App):
             if self.op_is_active:
                 if os.path.isdir(path):
                     #file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(path, "*." + ext)) for ext in self.dbm.SUPPORTED_EXT])))
-                    file_list = mutl.search_files(path, self.dbm.SUPPORTED_EXT)
+                    file_list, file_size = mutl.search_files(path, self.dbm.SUPPORTED_EXT)
                     for fl in file_list:
                         self.add_file_entry(fl)
                 elif os.path.isfile(path):
@@ -1599,7 +1599,7 @@ class MyDataBaseApp(App):
 
     def reload_data(self):
 
-        self.loaded_file_dir, self.loaded_file_list = self.dbm.get_file_list(self.loaded_title)
+        self.loaded_file_dir, self.loaded_file_list, _ = self.dbm.get_file_list(self.loaded_title)
         self.loaded_file_num = len(self.loaded_file_list)
 
         self.logger.debug('get {} images from {}'.format(self.loaded_file_num, self.loaded_title))
@@ -1632,7 +1632,7 @@ class MyDataBaseApp(App):
 
         return True
         
-    def reload_thumbnailview(self):
+    def reload_thumbnailview(self, page_hold=False):
 
         enable_or = self.tv_filter['enable_or']
         
@@ -1661,10 +1661,13 @@ class MyDataBaseApp(App):
         screen = self.root.ids.sm.get_screen('ThumbnailView')
         screen.ids.fe_btn.disabled = (self.view_file_num == self.loaded_file_num)
 
-        self.page_index = 0
         self.page_num = math.ceil(self.view_file_num / self.my_config['max_thumbnail'])
 
-        self.change_thumbnailview('1')
+        if page_hold:
+            self.change_thumbnailview(str(self.page_index))
+        else:
+            self.page_index = 0
+            self.change_thumbnailview('1')
 
     def change_thumbnailview(self, jump_info, wait_draw=False):
 
@@ -1699,8 +1702,8 @@ class MyDataBaseApp(App):
             else:
                 return
     
-        if current_idx == next_index:
-            return
+        #if current_idx == next_index:
+            #return
 
         self._wait_cancel()
 
@@ -1964,7 +1967,6 @@ class MyDataBaseApp(App):
             self.dbm.start_file_operation()
             self._open_progress('copy')
 
-
     # ファイルの削除
     def delete_files(self, instance):
 
@@ -1992,7 +1994,7 @@ class MyDataBaseApp(App):
 
         self.dbm.sort_files(self.loaded_title, ref_index, copy.deepcopy(self.selected_file_index))
         self.reload_data()
-        self.reload_thumbnailview()        
+        self.reload_thumbnailview(page_hold=True)        
     
     def _update_all_thumbnail_color(self):
         
@@ -2135,7 +2137,7 @@ class MyDataBaseApp(App):
     def _open_progress(self, p_type):
         if p_type == 'copy':
             content = ProgressPopUp()
-            self.p_popup = Popup(title="データコピー中", content=content, size_hint=(None, None), size=(800, 200), auto_dismiss=False)
+            self.p_popup = Popup(title="データコピー中", content=content, size_hint=(None, None), size=(800, 240), auto_dismiss=False)
         elif p_type == 'delete':
             content = Label(text='しばらくお待ちください。', font_size=16)
             self.p_popup = Popup(title="データ削除中", content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=False)
@@ -2156,6 +2158,11 @@ class MyDataBaseApp(App):
             content.task_num = cp_progress['task_num']
             content.done_file = cp_progress['done_file']
             content.file_num = cp_progress['file_num'] if cp_progress['file_num'] != 0 else 1
+            
+            content.done_size = '{:.2f}'.format(cp_progress['done_size'])
+            content.all_size = '{:.2f}'.format(cp_progress['all_size'])
+            content.remaining_time = int(cp_progress['remaining_time'])
+            content.speed = '{:.2f}'.format(cp_progress['speed'])
 
         # コピー進捗の確認
         if self.dbm.file_op_is_alive():
