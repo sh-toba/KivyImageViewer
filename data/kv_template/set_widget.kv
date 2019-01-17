@@ -67,7 +67,7 @@
         on_press: app.select_db(root)
         #color: [0.0,0.0,1.0,1.0] if root.is_selected else [1,1,1,1.0]
     Label:
-        text: '登録数：{}\nサイズ：{}MB'.format(root.data_num,root.data_size)
+        text: '登録数：{}\nサイズ：{}MiB'.format(root.data_num,root.data_size)
         font_size: 12
 
 # DataBaseItemsView用
@@ -377,6 +377,10 @@
     task_num: 0
     done_file: 0
     file_num: 1
+    done_size: '0'
+    all_size:'0'
+    remaining_time:0
+    speed: '0'
 
     Label:
         text: 'Title : {} ({}/{})'.format(root.now_title, root.now_task, root.task_num)
@@ -386,3 +390,9 @@
         font_size: 16
     ProgressBar:
         value: (root.done_file/root.file_num) * 100
+    Label:
+        text: '{}/{}MiB'.format(root.done_size, root.all_size)
+        font_size: 14
+    Label:
+        text: '残り約{}秒 ({}MiB/s)'.format(root.remaining_time, root.speed)
+        font_size: 14

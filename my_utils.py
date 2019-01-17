@@ -5,10 +5,17 @@ from itertools import chain
 def search_files(path, exts):
         p = Path(path)
         file_list = list(chain.from_iterable([p.glob("*." + ext) for ext in exts]))
-        return sorted([str(r) for r in file_list], key=numericalSort)
+
+        ret_list = []
+        file_size = 0
+        for path_obj in file_list:
+                ret_list.append(str(path_obj))
+                file_size += path_obj.stat().st_size
+
+        return sorted(ret_list, key=numericalSort), file_size
 
 def numericalSort(value):
-    numbers = re.compile(r'(\d+)')
-    parts = numbers.split(value)
-    parts[1::2] = map(int, parts[1::2])
-    return parts
+        numbers = re.compile(r'(\d+)')
+        parts = numbers.split(value)
+        parts[1::2] = map(int, parts[1::2])
+        return parts
