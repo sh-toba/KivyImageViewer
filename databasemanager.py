@@ -87,8 +87,13 @@ class DataBaseManager():
         if self.file_op_thread.is_alive():
             self.file_op_thread.join()
 
-        self.cursor.close()
-        self.connection.close()
+        self.sql_tasks = []
+
+        if self.db_root != '':
+            self.cursor.close()
+            self.connection.close()
+            self.db_root == ''
+
     
     def database_is_exist(self, db_root):
         db_path = os.path.join(db_root, self.DATABASE_NAME)
@@ -109,7 +114,7 @@ class DataBaseManager():
         self.connection = sqlite3.connect(db_path, detect_types = sqlite3.PARSE_DECLTYPES|sqlite3.PARSE_COLNAMES)
         self.cursor = self.connection.cursor()
 
-        return
+        return self.get_free_space() / 1024 #MiBで帰ってくる
     
     def create_database(self, db_root, db_option={}):
         """
@@ -164,6 +169,106 @@ class DataBaseManager():
 
         return True
 
+    def copy_database(self, dst_path):
+
+        self.file_op_tasks = []
+        data_list = self.get_items(['Title', 'FileNum', 'Size'])
+
+        dst_data_path = os.path.join(dst_path, self.DATA_DIR)
+
+        all_size = 0
+        for row in data_list:
+
+            title = row[0]
+            filenum = row[1]
+            src_size = row[2]
+            all_size += src_size
+
+            src_path = os.path.join(self.data_dir, title)
+            new_path = os.path.join(dst_data_path, title)
+
+            # ファイルコピーのタスクを作成する
+            self.file_op_tasks.append({
+                'title':title,
+                'src_path':src_path,
+                'src_size':src_size,
+                'dst_path':new_path,
+                'file_num':filenum
+                })
+
+        try:
+            disk_info = shutil.disk_usage(dst_path)
+        except:
+            return False
+
+        if all_size >= (disk_info.free / (1024*1024)):
+            return False
+
+        os.mkdir(dst_data_path)
+        dst_tag_path = os.path.join(dst_data_path, self.TAG_IMAGE_DIR)
+        shutil.copytree(self.tag_dir, dst_tag_path)
+
+        src_db_path = os.path.join(self.db_root, self.DATABASE_NAME)
+        dst_db_path = os.path.join(dst_path, self.DATABASE_NAME)
+        shutil.copyfile(src_db_path, dst_db_path)
+
+        return True
+
+    def start_copy_database(self):
+
+        if self.file_op_thread.is_alive():
+            return False
+
+        self.file_op_thread = threading.Thread(target=self._copy_database,daemon=False)
+        self.file_op_thread.start()
+
+        return True
+
+    def _copy_database(self):
+
+        self.file_op_progress['task_num'] = len(self.file_op_tasks)
+
+        self.file_op_progress['done_size'] = 0
+        self.file_op_progress['all_size'] = 0
+        for ftask in self.file_op_tasks:
+            self.file_op_progress['all_size'] += ftask['src_size']
+
+        start = time.time()
+
+        for t_idx, ftask in enumerate(self.file_op_tasks):
+
+            # 初期設定
+            title = ftask['title']
+            trg_path = ftask['dst_path']
+            src_path = ftask['src_path']
+
+            self.file_op_progress['task_index'] = t_idx+1
+            self.file_op_progress['title'] = title
+            self.file_op_progress['file_num'] = ftask['file_num']
+            self.file_op_progress['done_file'] = None
+
+            shutil.copytree(src_path, trg_path)
+
+            # 処理速度、残り時間予測
+            self.file_op_progress['done_size'] += ftask['src_size']
+            process_time = time.time() - start
+            if process_time != 0:
+                self.file_op_progress['speed'] = self.file_op_progress['done_size']/process_time # [MiB/s]
+
+            if self.file_op_progress['speed'] != 0:
+                self.file_op_progress['remaining_time'] = (self.file_op_progress['all_size'] - self.file_op_progress['done_size']) / self.file_op_progress['speed']
+
+
+    def get_free_space(self):
+        """
+        接続中のデータベースのディスク空き容量を取得する
+        """
+        try:
+            disk_info = shutil.disk_usage(self.db_root)
+            return disk_info.free / (1024*1024)
+        except:
+            return 0
+    
 
     # MainTable操作
     def get_db_info(self):
@@ -225,7 +330,7 @@ class DataBaseManager():
                 break
 
             # ファイル一覧取得
-            file_list, file_size = mutl.search_files(src_path, self.SUPPORTED_EXT)
+            file_list, file_size = mutl.search_files_deep(src_path, self.SUPPORTED_EXT)
             file_size /= (1024 * 1024)
             #file_list = sorted(list(chain.from_iterable([glob.glob(os.path.join(src_path, "*." + ext)) for ext in self.SUPPORTED_EXT])))
 
@@ -559,7 +664,7 @@ class DataBaseManager():
                             os.mkdir(thum_dir)
                         self._gif_to_zip(file_path, new_path, thum_dir)
                         fsize = os.path.getsize(new_path + '.zip') / (1024*1024)
-                        values_dict['Size'] += fsize
+                        values_dict['Size'] += fsize                
                     else:
                         # TODO: 上書き操作は仮で禁止にしている
                         new_path = new_path + ext
@@ -643,6 +748,7 @@ class DataBaseManager():
 
         self.logger.debug('Delete Operation Finished')
 
+
     def file_op_is_alive(self):
         return self.file_op_thread.is_alive()
 
@@ -689,11 +795,12 @@ class DataBaseManager():
         else:
             return result
 
-    def get_titles(self, filter_option={}, init_chars=[], enable_or=False):
+    def get_titles(self, filter_option={}, init_chars=[], enable_or=False, sort_option=('Updated',True)):
 
         col_names = ['Title', 'FileNum', 'IsFavorite', 'InitialCharacter'] + list(filter_option.keys())
 
-        sql = 'SELECT {} FROM MainTable ORDER BY Updated DESC'.format(','.join(col_names))
+        sort_order = 'DESC' if sort_option[1] else 'ASC'
+        sql = 'SELECT {} FROM MainTable ORDER BY {} {}'.format(','.join(col_names), sort_option[0], sort_order)
         ret = self.cursor.execute(sql)
         
         title_list = []

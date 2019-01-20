@@ -34,23 +34,6 @@ BoxLayout:
                 on_release: app.go_previous_screen()
                 color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
 
-            ActionGroup:
-                id: av_tmsize
-                mode: 'spinner'
-                #overflow_image: 'data/icons/thumbnail.png'
-                ActionButton:
-                    text: '極小アイコン'
-                    on_press: app.view_size=0.5
-                ActionButton:
-                    text: '小アイコン'
-                    on_press: app.view_size=1
-                ActionButton:
-                    text: '中アイコン'
-                    on_press: app.view_size=2
-                ActionButton:
-                    text: '大アイコン'
-                    on_press: app.view_size=4
-
             ActionToggleButton:
                 id: tagsetting
                 text: 'リンク'
@@ -113,6 +96,15 @@ BoxLayout:
                 on_release: app.change_mode('select') if(self.state=='down') else app.change_mode('normal')
                 color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
 
+            ActionButton:
+                id: select
+                text: 'ビュー変更'
+                icon: 'data/icons/eye.png'
+                icon_height: root.icon_size
+                icon_width: root.icon_size
+                on_release: app.change_view_mode()
+                color: [1,1,1,0] if app.hide_menu else [1, 1, 1, 1]
+
             ActionToggleButton:
                 id: select
                 text: 'ヘルプ'
@@ -132,7 +124,7 @@ BoxLayout:
             ActionButton:
                 id: select
                 text: '終了'
-                icon: 'data/icons/batsu.png'
+                icon: 'data/icons/login.png'
                 icon_height: root.icon_size
                 icon_width: root.icon_size
                 on_release: app.exit_app()

@@ -10,6 +10,14 @@
     size: self.texture_size
     halign: 'left'
     font_size: '16sp'
+<OptButton@Button>:
+    size_hint_x: None
+    width: 100
+    background_color: 0.128, 0.128, 0.128, 1
+<OptButtonT@ToggleButton>:
+    size_hint_x: None
+    width: 100
+    background_color: 0.128, 0.128, 0.128, 1
 
 <MyCheckBox@BoxLayout>:
     text: ''
@@ -106,6 +114,10 @@
 
 <DataEntryLayout@BoxLayout>:
     orientation: 'vertical'
+
+    filenum:0
+    datasize:0
+
     BoxLayout:
         size_hint_y: None
         height: 30
@@ -165,6 +177,13 @@
             text: ''
             hint_text: 'リンクするURLを入力してください'
             on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+    BoxLayout:
+        size_hint_y:None
+        height:40
+        Label:
+            text:'ファイル数: {}'.format(root.filenum)
+        Label:
+            text:'サイズ: {:.2f}MiB'.format(root.datasize)
     BoxLayout:
         size_hint_y: None
         height: 30
@@ -238,6 +257,36 @@
     on_press: app.change_thumbnailview(self)
 
 # ImageView用
+<MyImage@Image>:
+    source: app.image_file_path
+    allow_stretch: True
+    anim_delay: app.gif_speed
+    no_cache: True
+
+<MyBookView@BoxLayout>:
+
+    AnchorLayout:
+        anchor_x: 'right'
+        Image:
+            #pos_hint:{'right':1, 'top':1}
+            size_hint_x:1
+            size_hint_max_x:self.parent.height*self.image_ratio
+            source: app.image_file_path_sub
+            allow_stretch: True
+            keep_ratio: True
+            anim_delay: app.gif_speed
+            no_cache: True
+    AnchorLayout:
+        anchor_x: 'left'
+        Image:
+            size_hint_x:1
+            size_hint_max_x:self.parent.height*self.image_ratio
+            source: app.image_file_path
+            allow_stretch: True
+            keep_ratio: True
+            anim_delay: app.gif_speed
+            no_cache: True
+                
 <ImageViewButton@Button>:
     font_size: 16
     color: [0.8,0.8,0.8,0.8] if app.help_on else [0.8,0.8,0.8,0]
@@ -368,6 +417,25 @@
 			size_hint: .5, 1
 			text: 'いいえ'
 			on_release: root.no()
+
+<LoadDialog>:
+    BoxLayout:
+        size: root.size
+        pos: root.pos
+        orientation: "vertical"
+        FileChooserListView:
+            id: filechooser
+
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            Button:
+                text: "Cancel"
+                on_release: root.cancel()
+
+            Button:
+                text: "Select"
+                on_release: root.select(filechooser.path, filechooser.selection)
 
 <ProgressPopUp@BoxLayout>:
 	orientation: 'vertical'

@@ -4,21 +4,60 @@
 DataBaseScreen:
     name: 'DataBaseItemsView'
 
+    filt_on: False
+    filt_text: ''
+    view_values: ['Title']
+
     BoxLayout:
         orientation:'vertical'
 
         padding: [0,15,0,0]
 
-        AnchorLayout:
+        BoxLayout:
             id: header
 
-            anchor_x:'center'
-            anchor_y:'center'
+            #anchor_x:'center'
+            #anchor_y:'center'
 
             padding: [10,0,10,10]
 
             size_hint_y: None
             height: 50
+
+            spacing: 5
+
+            Label:
+                size_hint_x: None
+                width: 80
+                text: '表示切替'
+                font_size: 16
+            Spinner:
+                text: app.db_view_mode
+                on_text: app.switch_db_view(v_mode=self.text)
+                values: root.view_values
+                size_hint_x: None
+                width: 120
+            Label:
+                size_hint_x: None
+                width: 80
+                text: '並び替え'
+                font_size: 16
+            Spinner:
+                text: app.db_sort_mode
+                on_text: app.switch_db_view(s_mode=self.text)
+                values: ['新着順','名前順','サイズ順']
+                size_hint_x: None
+                width: 120
+            Label:
+                size_hint_x: None
+                width: 50
+                text: '降順'
+                font_size: 16
+            Switch:
+                size_hint_x: None
+                width: 80
+                active: app.db_sort_desc
+                on_active: app.switch_db_view(desc_order=self.active)
         
         ScrollView:
             StackLayout:
@@ -38,7 +77,40 @@ DataBaseScreen:
                     Rectangle:
                         size: self.size
                         pos: self.pos
-        
+
+        AnchorLayout:
+            id: filter_info
+
+            anchor_x:'center'
+            anchor_y:'center'
+
+            padding: 10
+
+            size_hint_y: None
+            height: 50
+
+            BoxLayout:
+                orientation: 'vertical'
+                spacing: 2
+
+                Label:
+                    text: 'フィルタ適用中' if root.filt_on else ''
+                    font_size: 20
+                Label:
+                    text: root.filt_text if root.filt_on else ''
+                    font_size: 14
+            
+            AnchorLayout:
+                anchor_x:'right'
+                anchor_y: 'center'
+                Button:
+                    text:'解除'
+                    size_hint: None, None
+                    size: 100, 40
+                    on_release: app.exit_filter(self)
+                    disabled: not root.filt_on
+
+
         BoxLayout:
             orientation:'vertical'
             size_hint_y: None

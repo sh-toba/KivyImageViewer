@@ -52,8 +52,8 @@ BoxLayout:
             Button:
                 size_hint_x: None
                 width: self.height
-                text: ''
-                #on_press: app.select_initial(self)
+                text: '...'
+                on_release: app.open_load_popup(self)
         BoxLayout:
             size_hint_y: None
             height: 40
