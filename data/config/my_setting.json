@@ -19,5 +19,12 @@
         "key":"gif_speed_span",
         "type":"options",
         "options":["2","5","10"]
+    },
+    {
+        "title":"Exclude front cover",
+        "section":"section1",
+        "key":"exclude_front_cover",
+        "type":"bool",
+        "values":["off","on"]
     }
 ]

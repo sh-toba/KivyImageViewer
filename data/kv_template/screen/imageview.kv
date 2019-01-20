@@ -12,12 +12,9 @@ DataBaseScreen:
             anchor_x:'center'
             anchor_y: 'center'
 
-            Image:
-                source: app.image_file_path
-                allow_stretch: True
-                anim_delay: app.gif_speed
-                no_cache: True
-                
+            BoxLayout:
+                id: im_box
+                MyImage:
             BoxLayout:
                 BoxLayout:
                     orientation:'vertical'

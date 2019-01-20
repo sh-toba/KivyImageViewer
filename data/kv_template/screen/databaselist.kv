@@ -9,33 +9,31 @@ DataBaseScreen:
         orientation:'vertical'
 
         padding: [0,15,0,0]
-        AnchorLayout:
+        BoxLayout:
             id: header
-            anchor_x:'center'
-            anchor_y:'center'
-            padding: [10,0,10,0]
-            size_hint_y: None
-            height: 40
 
-            AnchorLayout:
-                anchor_x:'left'
-                anchor_y:'center'
-                BoxLayout:
-                    size_hint_x: None
-                    width: self.minimum_width
-                    spacing: 10
-                    Button:
-                        text:'êVãKìoò^'
-                        size_hint_x:None
-                        width: 80
-                        #on_release: app.open_dbc_popup(False)
-                        on_release: app.open_main_popup(self, mode='create_db', load_mode=False)
-                    Button:
-                        text:'ì«Ç›çûÇ›'
-                        size_hint_x:None
-                        width: 80
-                        #on_release: app.open_dbc_popup(True)
-                        on_release: app.open_main_popup(self, mode='create_db', load_mode=True)
+            #anchor_x:'center'
+            #anchor_y:'center'
+
+            padding: [10,0,10,10]
+
+            size_hint_y: None
+            height: 50
+
+            spacing: 5
+
+            Button:
+                text:'êVãKçÏê¨'
+                size_hint_x:None
+                width: 80
+                #on_release: app.open_dbc_popup(False)
+                on_release: app.open_main_popup(self, mode='create_db', load_mode=False)
+            Button:
+                text:'ì«Ç›çûÇ›'
+                size_hint_x:None
+                width: 80
+                #on_release: app.open_dbc_popup(True)
+                on_release: app.open_main_popup(self, mode='create_db', load_mode=True)
         
         ScrollView:
             StackLayout:
@@ -73,13 +71,6 @@ DataBaseScreen:
                 id: footer
                 anchor_x: 'center'
                 anchor_y: 'bottom'
-
-                    
-            AnchorLayout:
-                anchor_x: 'center'
-                anchor_y: 'top'
-                Label:
-                    text: 'ì™ï∂éöëIë'
 
 
 
