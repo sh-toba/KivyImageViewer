@@ -34,6 +34,12 @@ DataBaseScreen:
                 width: 80
                 #on_release: app.open_dbc_popup(True)
                 on_release: app.open_main_popup(self, mode='create_db', load_mode=True)
+            Button:
+                text:'ï°êª'
+                size_hint_x:None
+                width: 80
+                #on_release: app.open_dbc_popup(True)
+                on_release: app.open_main_popup(self, mode='copy_db')
         
         ScrollView:
             StackLayout:

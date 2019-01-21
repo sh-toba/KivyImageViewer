@@ -1,0 +1,109 @@
+#-*- coding: shift-jis -*-
+#:kivy 1.10.1
+
+BoxLayout:
+	orientation: 'vertical'
+    spacing: 10
+
+    sp_vals: []
+    asign_num: 0
+    datasize: 0
+
+    Label:
+        size_hint_y:None
+        height: 40
+        valign: 'center'
+        text: 'データベースを複製します'
+
+    BoxLayout:
+        orientation: 'vertical'
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            canvas.before:
+                Color:
+                    rgba: 0.0, 0.4, 0.8, 0.5
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+            Label:
+                text:'複製元'
+                color: 0.6, 0.6, 0.6, 1
+        
+        BoxLayout:
+            size_hint_y:None
+            height:40
+            Label:
+                text:'Title: '
+                size_hint_x: None
+                width: 100
+            Spinner:
+                id: sp
+                text: ''
+                values: root.sp_vals
+                on_text: app.change_copied_db(root, self.text)
+                height: 40
+
+        BoxLayout:
+            size_hint_y:None
+            height:40
+            Label:
+                text:'登録数: {}'.format(root.asign_num)
+            Label:
+                text:'サイズ: {:.2f}MiB'.format(root.datasize)
+
+        BoxLayout:
+            size_hint_y: None
+            height: 40
+            canvas.before:
+                Color:
+                    rgba: 0.5, 0.25, 0.25, 0.8
+                Rectangle:
+                    size: self.size
+                    pos: self.pos
+            Label:
+                text:'複製先'
+                color: 1.0, 0.0, 0.0, 1
+        BoxLayout:
+            size_hint_y:None
+            height:40
+            Label:
+                text:'Title: '
+                size_hint_x: None
+                width: 100
+            TextInput:
+                id: title_input
+                text: ''
+                hint_text: 'タイトルを入力してください'
+                on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+        BoxLayout:
+            size_hint_y:None
+            height:40
+            Label:
+                text:'Path: '
+                size_hint_x: None
+                width: 100
+            TextInput:
+                id: path_input
+                text: ''
+                hint_text: 'パスを入力してください'
+                on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+            Button:
+                size_hint_x: None
+                width: self.height
+                text: '...'
+                on_release: app.open_load_popup(self)
+ 
+	BoxLayout:
+		orientation: 'horizontal'
+        size_hint_y:None
+        height:40
+		Button:
+			size_hint: .5, 1
+			text: '登録'
+			on_release: app.copy_db(sp.text, title_input.text, path_input.text)
+ 
+		Button:
+			size_hint: .5, 1
+			text: '戻る'
+			on_release: app.close_popup()
