@@ -171,6 +171,9 @@ class DataBaseManager():
 
     def copy_database(self, dst_path):
 
+        if self.file_op_thread.is_alive():
+            return False
+
         self.file_op_tasks = []
         data_list = self.get_items(['Title', 'FileNum', 'Size'])
 
@@ -186,8 +189,8 @@ class DataBaseManager():
 
             src_path = os.path.join(self.data_dir, title)
             new_path = os.path.join(dst_data_path, title)
-
-            # ファイルコピーのタスクを作成する
+            
+            # ファイルコピーのタスクを作成する -簡易版
             self.file_op_tasks.append({
                 'title':title,
                 'src_path':src_path,
@@ -196,28 +199,14 @@ class DataBaseManager():
                 'file_num':filenum
                 })
 
-        try:
-            disk_info = shutil.disk_usage(dst_path)
-        except:
-            return False
-
-        if all_size >= (disk_info.free / (1024*1024)):
-            return False
-
         os.mkdir(dst_data_path)
-        dst_tag_path = os.path.join(dst_data_path, self.TAG_IMAGE_DIR)
+        
+        dst_tag_path = os.path.join(dst_path, self.TAG_IMAGE_DIR)
         shutil.copytree(self.tag_dir, dst_tag_path)
 
         src_db_path = os.path.join(self.db_root, self.DATABASE_NAME)
         dst_db_path = os.path.join(dst_path, self.DATABASE_NAME)
         shutil.copyfile(src_db_path, dst_db_path)
-
-        return True
-
-    def start_copy_database(self):
-
-        if self.file_op_thread.is_alive():
-            return False
 
         self.file_op_thread = threading.Thread(target=self._copy_database,daemon=False)
         self.file_op_thread.start()
@@ -225,6 +214,8 @@ class DataBaseManager():
         return True
 
     def _copy_database(self):
+
+        # TODO: このやりかただと進捗表示が細かくできない
 
         self.file_op_progress['task_num'] = len(self.file_op_tasks)
 
@@ -245,7 +236,6 @@ class DataBaseManager():
             self.file_op_progress['task_index'] = t_idx+1
             self.file_op_progress['title'] = title
             self.file_op_progress['file_num'] = ftask['file_num']
-            self.file_op_progress['done_file'] = None
 
             shutil.copytree(src_path, trg_path)
 

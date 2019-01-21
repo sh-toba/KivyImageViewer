@@ -443,12 +443,13 @@
     now_title: ''
     now_task: 0
     task_num: 0
-    done_file: 0
-    file_num: 1
+    done_file: '-'
+    file_num: 0
     done_size: '0'
     all_size:'0'
     remaining_time:0
     speed: '0'
+    pb_val: 0
 
     Label:
         text: 'Title : {} ({}/{})'.format(root.now_title, root.now_task, root.task_num)
@@ -457,7 +458,7 @@
         text: 'ÉtÉ@ÉCÉãêî : {}/{}'.format(root.done_file, root.file_num)
         font_size: 16
     ProgressBar:
-        value: (root.done_file/root.file_num) * 100
+        value: root.pb_val
     Label:
         text: '{}/{}MiB'.format(root.done_size, root.all_size)
         font_size: 14

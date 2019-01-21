@@ -36,11 +36,7 @@ from kivy.uix.spinner import Spinner
 import fonts_ja
 import databasemanager
 
-# アプリ内で動的にインスタンスを取得したいものは、
-# set_widget.kvに基本的なレイアウトを記述してクラス化する。
-# set_widget.kvはmydatabaseapp.kvでimportされている。
-# クラス定義の順序は、pythonファイル -> kvファイルの順序だと思っている。
-# TODO: もっと整理したいが、上手い記述の仕方がわからない
+Builder.load_file(os.path.join(os.path.dirname(__file__), 'data', 'kv_template', 'set_widget.kv'))
 
 # ベースアイテム
 class MyCheckBox(BoxLayout):
@@ -66,7 +62,8 @@ class DBItem(BoxLayout):
 class DataEntryLayout(BoxLayout):
     filenum = NumericProperty()
     datasize = NumericProperty()
-
+class DBItemInitialChar(ToggleButton):
+    text = StringProperty('')
 class TagEntryItem(BoxLayout):
     text = StringProperty()
 
@@ -204,6 +201,12 @@ class MyDataBaseApp(App):
             'content':'DBCreate',
             'available':['DataBaseList']
         },
+        'copy_db':{
+            'title':'データベース複製',
+            'size':(750,400),
+            'content':'DBCopy',
+            'available':['DataBaseList']
+        },
         'tag_entry':{
             'title':'タグ編集',
             'size':(900,760),
@@ -242,6 +245,7 @@ class MyDataBaseApp(App):
     dbc_load_mode = BooleanProperty(False)
     db_tag_tables = []
     db_list = {}
+    copying_db = {}
 
     # DataBaseItemView用
     db_title = ''
@@ -310,6 +314,8 @@ class MyDataBaseApp(App):
     # thread
     threads = {}
 
+    _keyboard = None
+
     def build_config(self, config):
         conf_path = os.path.join(self.CURRENT_DIR, 'data', 'config', 'default_conf.ini')
         config.read(conf_path)
@@ -331,31 +337,25 @@ class MyDataBaseApp(App):
 
         # テンプレートをあらかじめ読み込み
         for sn in self.APP_SCREENS:
-            sm.add_widget(self._load_template('screen', sn))
+            screen = self._load_template('screen', sn)
+            if screen.name == 'DataBaseItemsView':
+                for key in sorted(self.IC_FILTER_MAP.keys()):
+                    screen.ids.ic_jump.add_widget(DBItemInitialChar(text=key))
+
+            sm.add_widget(screen)
 
         # 別スレッドの生成
         self.threads['load_thumbnails'] = threading.Thread()
 
         # 頭文字選択用のレイアウトの作成
         sip_layout = self._load_template('popup','SelectInitial')
-        char_list = [
-            ['あ','い','う','え','お'],
-            ['か','き','く','け','こ'],
-            ['さ','し','す','せ','そ'],
-            ['た','ち','つ','て','と'],
-            ['な','に','ぬ','ね','の'],
-            ['は','ひ','ふ','へ','ほ'],
-            ['ま','み','む','め','も'],
-            ['や','ゆ','よ'],
-            ['ら','り','る','れ','ろ'],
-            ['わ','を','ん'],
-            ['他']]
         btn_space = 5
         btn_size = 40
-        for cl in char_list:
-            tmp_size = ((len(cl) * btn_size) + (len(cl)-1) * btn_space, btn_size)
+        for _, val in sorted(self.IC_FILTER_MAP.items(), key=lambda x:x[0]):
+            ic_num = len(val)
+            tmp_size = ((ic_num * btn_size) + (ic_num-1) * btn_space, btn_size)
             tmp_layout = BoxLayout(size_hint=(None,None), size=tmp_size)
-            for c in cl:
+            for c in val:
                 tmp_btn = Button(text=c)
                 tmp_btn.bind(on_release=self.set_initial_character)
                 tmp_layout.add_widget(tmp_btn)
@@ -363,12 +363,7 @@ class MyDataBaseApp(App):
         self.ic_popup = Popup(title='頭文字選択', content=sip_layout, size_hint=(None, None), size=(700, 300), auto_dismiss=True)
 
         # キーボードバインディング
-        self._keyboard = Window.request_keyboard(self._keyboard_closed, self.root, 'text')
-        if self._keyboard.widget:
-            # If it exists, this widget is a VKeyboard object which you can use
-            # to change the keyboard layout.
-            pass
-        self._keyboard.bind(on_key_down=self._on_keyboard_down)
+        self._open_mykeyboard()
 
         # データベースクラスのインスタンス取得
         self.dbm = databasemanager.DataBaseManager() 
@@ -390,10 +385,20 @@ class MyDataBaseApp(App):
 
     def close_popup(self):
 
-        if self.popup_mode == 'data_entry':
-            self.file_op_state = 'wait'
-            self.error_entry = []
-        
+        if (self.popup_mode=='copy_db') & (len(self.copying_db)!=0):
+            self.dbm.close()
+            self.dbm.connect_database(self.copying_db['path'])
+            num, sum_size = self.dbm.get_db_info()
+            self.db_list[self.copying_db['title']] = {
+                'path':self.copying_db['path'],
+                'num':num,
+                'size':sum_size
+            }
+            self.copying_db = {}
+            self.dbm.close()
+            self._save_db_list()
+            self.reload_db_list()
+
         self.popup.dismiss()
         self.popup_mode = 'close'
 
@@ -454,7 +459,8 @@ class MyDataBaseApp(App):
                 self.dbc_load_mode = True
             else:
                 self.dbc_load_mode = kargs['load_mode']
-
+        elif mode == 'copy_db':
+            content.sp_vals = list(self.db_list.keys())
         elif mode == 'tag_entry':
             # TODO: 似たようなloopをまとめる
             tp = content.ids.tp
@@ -507,26 +513,26 @@ class MyDataBaseApp(App):
     def close_confirm_popup(self):
         
         if self.task_remain:
-            
-            # sqlタスクの実行
-            self.dbm.resolve_sql_tasks()
-            
-            # DataBaseListの更新
-            if self.db_title in self.db_list.keys():
-                num, sum_size = self.dbm.get_db_info()
-                self.db_list[self.db_title]['size'] = sum_size
-                self.db_list[self.db_title]['num'] = num
-                self._save_db_list()
-                self.reload_db_list()
-
-            # DataBaseItemsViewの更新
-            self.reload_db_items()
-
-            # ThumbnailViewの更新
             sm = self.root.ids.sm
-            if sm.current == 'ThumbnailView':
-                if self.reload_data():
-                    self.reload_thumbnailview()
+            if sm.current in ['DataBaseItemsView', 'ThumbnailView']:
+                # sqlタスクの実行
+                self.dbm.resolve_sql_tasks()
+                
+                # DataBaseListの更新
+                if self.db_title in self.db_list.keys():
+                    num, sum_size = self.dbm.get_db_info()
+                    self.db_list[self.db_title]['size'] = sum_size
+                    self.db_list[self.db_title]['num'] = num
+                    self._save_db_list()
+                    self.reload_db_list()
+
+                # DataBaseItemsViewの更新
+                self.reload_db_items()
+
+                # ThumbnailViewの更新
+                if sm.current == 'ThumbnailView':
+                    if self.reload_data():
+                        self.reload_thumbnailview()
             
             self.task_remain = False
         
@@ -567,7 +573,6 @@ class MyDataBaseApp(App):
             if mode == 'select':
                 height = 40
                 option_layout.add_widget(OptButton(text='削除', on_release=self.delete_db))
-                option_layout.add_widget(OptButton(text='複製', on_release=self.copy_db))
             else:
                 height = 0
             Animation(height=height, d=.3, t='out_quart').start(option_layout)
@@ -644,53 +649,6 @@ class MyDataBaseApp(App):
             self.screen_title = self.SCREEN_TITLES[prev_idx]
             sm.current = self.APP_SCREENS[prev_idx]
 
-
-    """
-    # フィルタ機能
-    def open_filter_popup(self):
-
-        sm = self.root.ids.sm
-
-        if not sm.current in ['DataBaseItemsView','ThumbnailView']:
-            return
-
-        #ポップアップ構造のテンプレート読み込み
-        content = self._load_template('popup', 'FilterPopUp')
-        tp = content.ids.tp
-        tp.clear_tabs()
-
-        if sm.current == 'DataBaseItemsView':
-
-            tag_list = {}
-            for key in self.db_tag_tables:
-                tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
-
-            for key, val_list in sorted(tag_list.items(), key=lambda x:x[0]):
-                #tp_item = TabbedPanelItem(text=key)
-                th = TabbedPanelHeader(text=key)
-                #filter_items = self._load_template('MyCheckBoxs')
-                filter_items = ScrollStack()
-                for val in val_list:
-                    #print('{0} - {1}'.format(key, val))
-                    filter_items.ids.fi.add_widget(MyCheckBox(text=val))
-                    #filter_items.add_widget(MyCheckBox(text=val))
-                th.content = filter_items
-                tp.add_widget(th)
-
-        elif sm.current == 'ThumbnailView':
-            th = TabbedPanelHeader(text='その他')
-            #filter_items = self._load_template('MyCheckBoxs')
-            filter_items = ScrollStack()
-            filter_items.ids.fi.add_widget(MyCheckBox(text='お気に入り'))
-            filter_items.ids.fi.add_widget(MyCheckBox(text='チャプター'))
-            th.content = filter_items
-            tp.add_widget(th)
-
-        self.popup_mode = 'filter'
-            
-        self.popup = Popup(title='フィルタ', content=content, size_hint=(None, None), size=(800, 600), auto_dismiss=True)
-        self.popup.open()
-    """
 
     def adapt_filter(self, tp, eo_active):
 
@@ -827,16 +785,6 @@ class MyDataBaseApp(App):
             size_str = '{:.1f}'.format(info['size'])
             db_list_layout.add_widget(DBInfo(title=key, data_num=info['num'], data_size=size_str))
         
-    """
-    def open_dbc_popup(self, load_mode=False):
-        self.dbc_load_mode = load_mode
-
-        # ポップアップから、タイトル、パス、オプションタグ種別、タグ登録可能数を取得
-        content = self._load_template('popup', 'DBCreate')
-        self.popup = Popup(title="データベース登録", content=content, size_hint=(None, None), size=(700, 350), auto_dismiss=False)
-        self.popup.open()
-    """
-
     def create_db(self, title, path, tag_types_s):
 
         err_msg = []
@@ -940,12 +888,44 @@ class MyDataBaseApp(App):
 
         self.close_confirm_popup()
 
-    def copy_db(self, instance):
-        pass
+    def change_copied_db(self, p_root, sp_text):
+        p_root.asign_num = self.db_list[sp_text]['num']
+        p_root.datasize = self.db_list[sp_text]['size']
 
-    def run_copy_db(self):
-        pass
-
+    def copy_db(self, src_title, dst_title, path):
+        
+        err_msg = []
+        if src_title == '':
+            err_msg.append('複製元を選択してください')
+        if dst_title == '':
+            err_msg.append('Titleを入力してください')
+        elif src_title == dst_title:
+            err_msg.append('複製元と同名にはできません')
+        if path == '':
+            err_msg.append('Pathを入力してください')
+        elif not os.path.exists(path):
+            err_msg.append('不正なパスです')
+        else: 
+            if self.dbm.database_is_exist(path):
+                err_msg.append('既に他のデータベースが存在します')
+            if src_title != '':
+                disk_info = shutil.disk_usage(path)
+                if (self.db_list[src_title]['size'] + self.MARGIN_FREE_SPACE*1024) >= (disk_info.free / (1024*1024)):
+                    err_msg.append('複製先の容量が不足しています。')
+        
+        
+        if len(err_msg) != 0:
+            content = SimplePopUp(text='\n'.join(err_msg), close=self.close_confirm_popup)
+            self.c_popup = Popup(title="エラー", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+            self.c_popup.open()
+        else:
+            self.dbm.connect_database(self.db_list[src_title]['path'])
+            self.copying_db = {
+                'title':dst_title,
+                'path':path
+            }
+            self.dbm.copy_database(path)
+            self._open_progress('copy_db')
 
     def _save_db_list(self):
         fname = os.path.join(self.CURRENT_DIR, self.DATABASE_LIST)
@@ -1187,8 +1167,6 @@ class MyDataBaseApp(App):
         return
         
     def start_delete(self):
-
-        self.file_op_state = 'active'
         self.close_confirm_popup()
 
         # 削除
@@ -1198,44 +1176,6 @@ class MyDataBaseApp(App):
 
 
     # タグ操作
-    """
-    def open_tag_entry(self, instance):
-
-        sm = self.root.ids.sm
-
-        if not sm.current == 'DataBaseItemsView':
-            return
-
-        #ポップアップ構造のテンプレート読み込み
-        content = self._load_template('popup','TagEntry')
-        tp = content.ids.tp
-        tp.clear_tabs()
-
-        # 登録済みのタグ一覧を取得する
-        tag_list = {}
-        for key in self.db_tag_tables:
-            tag_list[key] = self.dbm.get_tag_items(key, 'Name', convert=True)
-        #print(tag_list)
-
-        for key, val_list in sorted(tag_list.items(), key=lambda x:x[0]):
-            #tp_item = TabbedPanelItem(text=key)
-            th = TabbedPanelHeader(text=key)
-            #filter_items = self._load_template('MyCheckBoxs')
-            filter_items = ScrollStack()
-            for val in val_list:
-                #print('{0} - {1}'.format(key, val))
-                #filter_items.ids.fi.add_widget(MyCheckBox(text=val))
-                filter_items.ids.fi.add_widget(TagEntryItem(text=val))
-            
-            th.content = filter_items
-            tp.add_widget(th)
-            
-        self.popup = Popup(title='タグ編集', content=content, size_hint=(None, None), size=(900, 760), auto_dismiss=False)
-        self.popup.open()
-
-        self.popup_mode = 'tag_entry'
-    """
-
     def reflect_tag(self, tag_item, is_active):
 
         content = self.popup.content
@@ -1420,33 +1360,6 @@ class MyDataBaseApp(App):
         content.ids.link_input.text = ''
         content.im_source = self.NO_IMAGE
 
-    """
-    def open_entry_info(self, title):
-
-        content = self._load_template('popup','EntryInfoEdit')
-
-        # テンプレート情報の読み取り
-        col_name = ['Title', 'InitialCharacter', 'Updated', 'FileNum', 'Size', 'Link']
-        tmp_info = self.dbm.get_items(col_name=col_name, title=title, convert=False)
-        #for ti in tmp_info[0]:
-            #print(type(ti), ti)
-
-        content.ids.title_input.text = tmp_info[0][0]
-        content.ids.ic_btn.text = tmp_info[0][1]
-        content.ids.link_input.text = tmp_info[0][5]
-
-        content.before_title = tmp_info[0][0]
-        content.updated = tmp_info[0][2].strftime('%Y-%m-%d %H:%M:%S')
-        content.filenum = str(tmp_info[0][3])
-        content.datasize = '{:.2f}'.format(tmp_info[0][4])
-
-        content.ids.te_layout.add_widget(self._create_tag_panel(title=title))
-
-        self.popup = Popup(title='データ情報', content=content, size_hint=(None, None), size=(900, 760), auto_dismiss=False)
-        self.popup.open()
-
-        self.popup_mode = 'entry_info'
-    """
 
     def change_entry_info(self, instance):
 
@@ -1500,24 +1413,6 @@ class MyDataBaseApp(App):
 
 
     # データ登録ポップアップでのイベント
-    """
-    def open_entry_popup(self):
-
-        content = self._load_template('popup', 'DataEntry')
-
-        self.popup = Popup(title='データ登録', content=content, size_hint=(None, None), size=(900, 760), auto_dismiss=False)
-        self.popup.open()
-
-        self.op_is_active = True
-        self.popup_mode = 'data_entry'
-
-    def close_entry_popup(self):
-        self.close_popup()
-        self.op_is_active = False
-        self.entry_count = 0
-        self.error_entry = []
-    """
-
     def add_new_entry(self, path):
 
         tmp_list, tmp_size = mutl.search_files_deep(path, self.dbm.SUPPORTED_EXT)
@@ -1536,7 +1431,6 @@ class MyDataBaseApp(App):
         ne_layout.add_widget(self._create_tag_panel())
         th.content = ne_layout
         tp_data.add_widget(th)
-
 
     def delete_entry(self, tp):
         cur_tab = tp.current_tab
@@ -1648,23 +1542,13 @@ class MyDataBaseApp(App):
 
         if not self.reload_data():
             return
-        
-        """
-        # テスト用
-        for opt_key in self.file_options.keys():
-            for i in range(self.loaded_file_num):
-                if opt_key is 'favorite':
-                    self.file_options[opt_key][i] = ((i % 10) == 0)
-                elif opt_key is 'chapter':
-                    self.file_options[opt_key][i] = ((i % 23) == 0)
-        """
+    
+        self.reload_thumbnailview()
 
         self.screen_title = 'サムネイルビュー'
         sm = self.root.ids.sm
         sm.transition = SlideTransition(direction='left', duration=self.TRANSITION_SPEED)
         sm.current = 'ThumbnailView'
-
-        self.reload_thumbnailview()
 
     def reload_data(self):
 
@@ -1738,7 +1622,7 @@ class MyDataBaseApp(App):
             self.page_index = 0
             self.change_thumbnailview('1')
 
-    def change_thumbnailview(self, jump_info, wait_draw=False):
+    def change_thumbnailview(self, jump_info):
 
         current_idx = self.page_index
 
@@ -1792,7 +1676,8 @@ class MyDataBaseApp(App):
         # 既存サムネイルの削除
         self.root.ids.sm.get_screen('ThumbnailView').ids.thumbnails.clear_widgets()
 
-        if wait_draw:
+        sm = self.root.ids.sm
+        if sm.current != 'ThumbnailView':
             self.threads['load_thumbnails'] = threading.Thread(target=self._add_thumbnails_delayed, daemon=True)
         else:
             self.threads['load_thumbnails'] = threading.Thread(target=self._add_thumbnails, daemon=True)
@@ -1877,7 +1762,7 @@ class MyDataBaseApp(App):
         return
     
     def _add_thumbnails_delayed(self):
-        time.sleep(self.TRANSITION_SPEED + 0.2)
+        time.sleep(self.TRANSITION_SPEED + 0.1)
         self._add_thumbnails()
 
     def _update_thumbnail(self, dt):
@@ -1939,6 +1824,7 @@ class MyDataBaseApp(App):
             #self.image_file_name = self.loaded_file_list[im_index]
 
             #self._reset_mode() #normalモード以外では移らないのでいらない
+            self._open_mykeyboard()
             
             self.screen_title = 'イメージビューワー'
             sm = self.root.ids.sm
@@ -2084,27 +1970,6 @@ class MyDataBaseApp(App):
         
         tmp_index = None
 
-        """
-        if option == 'next':
-            if self.item_select_mode in ['favorite','chapter']:
-                for i in sorted(self.file_options[self.item_select_mode]):
-                    if i > self.image_idx:
-                        tmp_index = i
-                        break
-            else:
-                tmp_index = self.image_idx + 1
-
-        elif option == 'previous':
-            if self.item_select_mode in ['favorite','chapter']:
-                for i in reversed(sorted(self.file_options[self.item_select_mode])):
-                    if i < self.image_idx:
-                        tmp_index = i
-                        break
-            else:
-                tmp_index = self.image_idx - 1
-
-        """
-
         if option == 'next':
             if skip != 'normal':
                 for i in sorted(self.file_options[skip]):
@@ -2132,9 +1997,9 @@ class MyDataBaseApp(App):
             tmp_index = self.image_idx
 
         if tmp_index is None:
-            pass
+            return
         elif (tmp_index < 0) | (self.loaded_file_num-1 < tmp_index):
-            pass
+            return
         else:
             self.image_idx = tmp_index
             self.image_file_path = os.path.join(self.loaded_file_dir, self.loaded_file_list[tmp_index])
@@ -2221,19 +2086,19 @@ class MyDataBaseApp(App):
     def _open_progress(self, p_type):
         self.file_op_state = 'active'
         
-        if p_type == 'copy':
+        if p_type in ['copy_db','copy']:
             content = ProgressPopUp()
-            self.p_popup = Popup(title="データコピー中", content=content, size_hint=(None, None), size=(800, 240), auto_dismiss=False)
+            self.p_popup = Popup(title="コピー中", content=content, size_hint=(None, None), size=(800, 240), auto_dismiss=False)
         elif p_type == 'delete':
             content = Label(text='しばらくお待ちください。', font_size=16)
-            self.p_popup = Popup(title="データ削除中", content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=False)
+            self.p_popup = Popup(title="削除中", content=content, size_hint=(None, None), size=(300, 150), auto_dismiss=False)
 
         self.p_popup.open()
         Clock.schedule_interval(partial(self._file_op_progress, p_type), 0.1)
 
     def _file_op_progress(self, mode, *largs):
 
-        if mode == 'copy':
+        if mode in ['copy','copy_db']:
             # 進捗の確認
             cp_progress = self.dbm.get_file_op_progress()
 
@@ -2242,13 +2107,18 @@ class MyDataBaseApp(App):
             content.now_title = cp_progress['title']
             content.now_task = cp_progress['task_index']
             content.task_num = cp_progress['task_num']
-            content.done_file = cp_progress['done_file']
             content.file_num = cp_progress['file_num'] if cp_progress['file_num'] != 0 else 1
-            
+
+            if mode == 'copy':
+                content.done_file = str(cp_progress['done_file'])
+
+            content.pb_val = (cp_progress['done_size']/cp_progress['all_size']) * 100
+                
             content.done_size = '{:.2f}'.format(cp_progress['done_size'])
             content.all_size = '{:.2f}'.format(cp_progress['all_size'])
             content.remaining_time = int(cp_progress['remaining_time'])
             content.speed = '{:.2f}'.format(cp_progress['speed'])
+
 
         # コピー進捗の確認
         if self.dbm.file_op_is_alive():
@@ -2257,6 +2127,8 @@ class MyDataBaseApp(App):
             # 完了後の処理を行う。内部のactiveフラグで一度のみ実行されるようにしている
             if self.file_op_state == 'wait':
                 return False
+
+            self.file_op_state = 'wait'
                 
             self.p_popup.dismiss()
             if self.popup_mode != 'close':
@@ -2264,18 +2136,18 @@ class MyDataBaseApp(App):
 
             msg_lines = ['処理が完了しました！']
 
+            # TODO: ここいる？
             if mode == 'copy':
                 if len(self.error_entry) != 0:
                     msg_lines.append('[登録失敗]')
                     msg_lines += self.error_entry
-                    
-            elif mode == 'delete': 
-                self.file_op_state = 'wait'
+
+            if mode in ['copy', 'delete']:
+                self.db_free_space = self.dbm.get_free_space() / 1024
 
             # TODO: スレッド外でSQL文が実行できないため、
             # フラグを立ててpopupのクローズイベントと同時に行っているが、無理やり感がある
             self.task_remain = True
-            self.db_free_space = self.dbm.get_free_space() / 1024
 
             content = SimplePopUp(text='\n'.join(msg_lines), close=self.close_confirm_popup)
             self.c_popup = Popup(title="完了", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=False)
@@ -2283,6 +2155,15 @@ class MyDataBaseApp(App):
             
             return False
 
+
+    def _open_mykeyboard(self):
+        if self._keyboard is None:
+            self._keyboard = Window.request_keyboard(self._keyboard_closed, self.root, 'text')
+            if self._keyboard.widget:
+                # If it exists, this widget is a VKeyboard object which you can use
+                # to change the keyboard layout.
+                pass
+            self._keyboard.bind(on_key_down=self._on_keyboard_down)
 
     def _keyboard_closed(self):
         print('My keyboard have been closed!')

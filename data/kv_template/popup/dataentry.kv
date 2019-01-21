@@ -18,6 +18,7 @@ BoxLayout:
         border: 20,20,20,20
         background_color: 1,1,1,1
         do_default_tab: False
+        tab_width: 50
 
     AnchorLayout:
         anchor_x:'right'
@@ -42,7 +43,7 @@ BoxLayout:
                 text: 'É^Éuè¡ãé'
                 size_hint_x: None
                 width: 100
-                on_release: app.delete_entry(root.ids.tp)
+                on_release: app.delete_entry(root.ids.tp_data)
 
     BoxLayout:
         size_hint_y:None
