@@ -1,0 +1,58 @@
+#-*- coding: shift-jis -*-
+#:kivy 1.10.1
+
+BoxLayout:
+	orientation: 'vertical'
+    spacing: 10
+    sp_vals: []
+
+    Label:
+        size_hint_y:None
+        height: 40
+        valign: 'center'
+        text: 'CSVファイルからタグを追加できます'
+
+    BoxLayout:
+        size_hint_y:None
+        height:40
+        Label:
+            text:'タグ種別: '
+            size_hint_x: None
+            width: 100
+        Spinner:
+            id: sp
+            text: ''
+            values: root.sp_vals
+            height: 40
+
+    BoxLayout:
+        size_hint_y:None
+        height:40
+        Label:
+            text:'Path: '
+            size_hint_x: None
+            width: 100
+        TextInput:
+            id: path_input
+            text: ''
+            hint_text: 'CSVファイルのパスを入力してください'
+            on_text: self.text = self.text.replace('\n',''); self.text = self.text.replace('\r','')
+        Button:
+            size_hint_x: None
+            width: self.height
+            text: '...'
+            on_release: app.open_load_popup(self, mode='file')
+ 
+	BoxLayout:
+        size_hint_y: None
+        height: 40
+		orientation: 'horizontal'
+		Button:
+			size_hint: .5, 1
+			text: 'OK'
+			on_release: app.load_tag_csv(sp.text, path_input.text)
+ 
+		Button:
+			size_hint: .5, 1
+			text: 'キャンセル'
+			on_release: app.close_popup()
