@@ -1,7 +1,7 @@
 #-*- coding: utf-8 -*-
 
 from pathlib import Path
-import sqlite3, os, copy, glob, time, threading, datetime, shutil, logging, json
+import sqlite3, os, copy, glob, time, threading, datetime, shutil, logging, json, csv
 from itertools import chain
 from PIL import Image, ImageSequence
 import my_utils as mutl
@@ -41,9 +41,9 @@ class DataBaseManager():
     TEMPLATE_TAGS_COLUMN = {
         'Name': 'text primary key',
         'InitialCharacter': 'text',
-        'IsFavorite': 'Integer',
         'Link': 'text',
-        'Image': 'text'
+        'Image': 'text',
+        'IsFavorite': 'Integer'
     }
 
     db_root = ''
@@ -851,26 +851,24 @@ class DataBaseManager():
                 table_list.append(x[1])
         return table_list
 
-    def add_tag(self, table, values):
+    def add_tag(self, table, values_dict):
         """
         新規タグを追加する
             tagはMainTable内に存在するタグ種別名
             valuesは追加するタグ内容のリスト[Name, InitialCharacter]
         Nameが重複した場合はFalseリターン
         """
-        if self.tag_is_exist(table, values[0]):
+        if not 'Name' in values_dict.keys():
+            return False
+        elif self.tag_is_exist(table, values_dict['Name']):
             return False
 
         try:
-            if values[3] == '':
-                tmp_tuple = (values[0], values[1], values[2], '')
-            else:
-                im_ext = self._asign_tag_image(table, values[3], values[0])
-                tmp_tuple = (values[0], values[1], values[2], im_ext)
-
-            sql = 'insert into {}(Name, InitialCharacter, Link, Image) VALUES(?,?,?,?)'.format(table)
-            self.logger.debug('{} {}'.format(sql, tmp_tuple))
-            self.cursor.execute(sql, tmp_tuple)
+            sql_tmp, sql_values = self._convert_dict4sql(values_dict)
+            sql = 'insert into {} {}'.format(table, sql_tmp)
+            #sql = 'insert into {}(Name, InitialCharacter, Link, IsFavorite, Image) VALUES(?,?,?,?,?)'.format(table)
+            self.logger.debug('{} {}'.format(sql, sql_values))
+            self.cursor.execute(sql, sql_values)
             self.connection.commit()
 
             return True
@@ -1107,11 +1105,45 @@ class DataBaseManager():
         for table in table_list:
             fname = os.path.join(save_dir, table + '.csv')
             with open(fname, "w", encoding=self.FILE_ENCODING) as write_file:
-                sql = 'SELECT Name,InitialCharacter,IsFavorite,Link FROM {}'.format(table)
+                writer = csv.writer(write_file, lineterminator='\n')
+                sql = 'SELECT Name,InitialCharacter,Link,IsFavorite FROM {}'.format(table)
                 for row in self.cursor.execute(sql):
-                    write_txt = ','.join([str(r) for r in row])
-                    write_file.write(write_txt)
+                    writer.writerow(list(row))
+                    #write_file.write(write_txt)
 
+    def add_tag_batch(self, table, path):
+        """
+        CSVファイルを使ってタグを追加する.
+        [Name, InitialCharacter, Link, IsFavoriteの順]
+        """
+        success_tags = []
+
+        if not os.path.exists(path):
+            return success_tags
+
+        with open(path, "r", encoding=self.FILE_ENCODING) as read_file:
+            reader = csv.reader(read_file)
+
+            for row in reader:
+
+                num = len(row)
+                if num < 2:
+                    continue
+                elif (row[0] == '') | (row[1] == ''):
+                    continue
+                
+                values_dict = {
+                    'Name':row[0],
+                    'InitialCharacter':row[1],
+                    'Link':'' if num < 3 else row[2],
+                    'IsFavorite':'' if num < 4 else row[3],
+                    'Image':''
+                }
+
+                if self.add_tag(table, values_dict):
+                    success_tags.append(row[0])
+
+        return success_tags
 
     def show_all(self):
         sql = 'SELECT * FROM MainTable'

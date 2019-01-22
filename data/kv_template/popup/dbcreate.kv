@@ -53,7 +53,7 @@ BoxLayout:
                 size_hint_x: None
                 width: self.height
                 text: '...'
-                on_release: app.open_load_popup(self)
+                on_release: app.open_load_popup(self, mode='dir')
         BoxLayout:
             size_hint_y: None
             height: 40

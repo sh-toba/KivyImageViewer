@@ -66,6 +66,8 @@ class DBItemInitialChar(ToggleButton):
     text = StringProperty('')
 class TagEntryItem(BoxLayout):
     text = StringProperty()
+class LoadTagInfoPopUp(BoxLayout):
+    pass
 
 # ThumbnailView用
 class Thumbnail(BoxLayout):
@@ -211,6 +213,12 @@ class MyDataBaseApp(App):
             'title':'タグ編集',
             'size':(900,760),
             'content':'TagEntry',
+            'available':['DataBaseItemsView']
+        },
+        'load_taginfo':{
+            'title':'タグ読み込み',
+            'size':(600,250),
+            'content':'LoadTagInfo',
             'available':['DataBaseItemsView']
         },
         'entry_info':{
@@ -453,7 +461,6 @@ class MyDataBaseApp(App):
                 filter_items.ids.fi.add_widget(MyCheckBox(text='チャプター'))
                 th.content = filter_items
                 tp.add_widget(th)
-
         elif mode == 'create_db':
             if not 'load_mode' in kargs.keys():
                 self.dbc_load_mode = True
@@ -475,7 +482,8 @@ class MyDataBaseApp(App):
                     filter_items.ids.fi.add_widget(TagEntryItem(text=val))
                 th.content = filter_items
                 tp.add_widget(th)
-
+        elif mode == 'load_taginfo':
+            content.sp_vals = copy.deepcopy(self.db_tag_tables)
         elif mode == 'entry_info':
 
             if not 'title' in kargs.keys():
@@ -493,12 +501,10 @@ class MyDataBaseApp(App):
             content.filenum = str(tmp_info[0][3])
             content.datasize = '{:.2f}'.format(tmp_info[0][4])
             content.ids.te_layout.add_widget(self._create_tag_panel(title=title))
-
         elif mode == 'data_entry':
             self.file_op_state = 'request'
             self.entry_count = 0
             p_title += ' - 空き容量:{:.2f}GiB'.format(self.db_free_space)
-
         else:
             return
 
@@ -550,9 +556,17 @@ class MyDataBaseApp(App):
         self.ic_popup.dismiss()
 
 
-    def open_load_popup(self, instance):
-        content = LoadDialog(select=self.select_directory, cancel=self.close_load_popup)
-        self.l_popup = Popup(title="Select Directory", content=content,size_hint=(0.9, 0.9))
+    def open_load_popup(self, instance, mode='dir'):
+        
+        p_title = ''
+        if mode == 'dir':
+            p_title = 'Select Directory'
+            content = LoadDialog(select=self.select_directory, cancel=self.close_load_popup)
+        elif mode == 'file':
+            p_title = 'Select file'
+            content = LoadDialog(select=self.select_file, cancel=self.close_load_popup)
+
+        self.l_popup = Popup(title=p_title, content=content,size_hint=(0.9, 0.9))
         self.l_popup.open()
 
     def close_load_popup(self):
@@ -561,6 +575,11 @@ class MyDataBaseApp(App):
     def select_directory(self, path, fname):
         self.l_popup.dismiss()
         self.popup.content.ids.path_input.text = path
+
+    def select_file(self, path, fname):
+        self.l_popup.dismiss()
+        if len(fname) != 0:
+            self.popup.content.ids.path_input.text = fname[0]
 
 
     def change_mode(self, mode):
@@ -585,7 +604,7 @@ class MyDataBaseApp(App):
                 height = 40
                 option_layout.add_widget(OptButton(text='タグ登録', on_release=partial(self.open_main_popup, mode='tag_entry')))
                 option_layout.add_widget(OptButton(text='CSV出力',on_release=self.backup_tag))
-                option_layout.add_widget(OptButton(text='CSV読込み', on_release=self.open_load_popup))
+                option_layout.add_widget(OptButton(text='CSV読込み', on_release=partial(self.open_main_popup, mode='load_taginfo')))
             elif mode == 'favorite':
                 height = 40
                 tmp_txt = 'フィルタOFF' if self.db_filter['is_favorite'] else 'フィルタON'
@@ -658,7 +677,6 @@ class MyDataBaseApp(App):
             self.db_filter['enable_or'] = eo_active
             self.db_filter['options'] = self._get_selected_tag(tp)
 
-            self.reload_db_header(filt_on=True)
             self.reload_db_items()
 
         elif sm.current == 'ThumbnailView':
@@ -681,7 +699,6 @@ class MyDataBaseApp(App):
         if sm.current == 'DataBaseItemsView':
             self.db_filter['options'] = {}
             self.db_filter['enable_or'] = False
-            self.reload_db_header()
             self.reload_db_items()
 
         elif sm.current == 'ThumbnailView':
@@ -781,7 +798,7 @@ class MyDataBaseApp(App):
         screen = self.root.ids.sm.get_screen('DataBaseList')
         db_list_layout = screen.ids.db_list
         db_list_layout.clear_widgets()
-        for key, info in self.db_list.items():
+        for key, info in sorted(self.db_list.items(), key=lambda x:x[0]):
             size_str = '{:.1f}'.format(info['size'])
             db_list_layout.add_widget(DBInfo(title=key, data_num=info['num'], data_size=size_str))
         
@@ -973,7 +990,6 @@ class MyDataBaseApp(App):
         self.db_sort_mode = '新着順'
         self.db_sort_desc = True
 
-        self.reload_db_header()
         self.reload_db_items()
         
         sm.transition = SlideTransition(direction='left', duration=self.TRANSITION_SPEED)
@@ -1032,8 +1048,6 @@ class MyDataBaseApp(App):
                 self.db_filter['options'] = {self.db_view_mode:[instance.title]}
                 self.db_filter['enable_or'] = False
                 self.switch_db_view(v_mode='Title')
-                #self.reload_db_header(filt_on=True)
-                #self.reload_db_items()
             elif self.item_select_mode == 'favorite':
                 instance.is_favorite ^= True
                 self.dbm.update_tag(self.db_view_mode, instance.title, values_dict={'IsFavorite':int(instance.is_favorite)})
@@ -1043,46 +1057,6 @@ class MyDataBaseApp(App):
                 if not url[0] is None:
                     if not url[0] == '':
                         webbrowser.open(url[0])
-
-    def reload_db_header(self, filt_on=False):
-        # ビューの設定
-        sm = self.root.ids.sm
-        screen = sm.get_screen('DataBaseItemsView')
-
-        # ヘッダー部分のレイアウト作成
-        #screen.ids.header.clear_widgets()
-        
-        """
-        if filt_on:
-            self.db_view_mode = 'Title'
-
-            filt_info = BoxLayout(orientation='vertical', spacing=2)
-            filt_info.add_widget(Label(text='フィルタ適用中', font_size=20))
-            filt_txt = []
-            for key, val in sorted(self.db_filter['options'].items(), key=lambda x:x[0]):
-                filt_txt.append('{}({})'.format(key, ','.join(val)))
-            sub_txt = 'OR: ' if self.db_filter['enable_or'] else 'AND: '
-            filt_info.add_widget(Label(text= sub_txt + ','.join(filt_txt), font_size=14))
-
-            a_layout_r = AnchorLayout(anchor_x='right', anchor_y='center')
-            a_layout_r.add_widget(Button(text='解除', size_hint=(None,None), size=(100, 40), on_release=self.exit_filter))
-            
-            screen.ids.header.add_widget(filt_info)
-            screen.ids.header.add_widget(a_layout_r)
-
-        else:
-            a_layout_l = AnchorLayout(anchor_x='left', anchor_y='center')
-
-            b_layout = BoxLayout(spacing=5)
-            b_layout.add_widget(Label(size_hint_x=None, width=100, text='表示切替', font_size=20))
-            tmp_list = ['Title'] + self.db_tag_tables
-            sp = Spinner(size_hint_x=None, width=150, values=tmp_list, text='Title')
-            sp.bind(text=self.switch_db_view)
-            b_layout.add_widget(sp)
-
-            a_layout_l.add_widget(b_layout)
-            screen.ids.header.add_widget(a_layout_l)
-        """
 
     def reload_db_items(self):
 
@@ -1212,7 +1186,15 @@ class MyDataBaseApp(App):
         else:
             tim = self.popup.content.im_source
 
-        if self.dbm.add_tag(table, (tn,ic, li,tim)):
+        values_dict = {
+            'Name': tn,
+            'InitialCharacter':ic,
+            'Link':li,
+            'Image':tim,
+            'IsFavorite':False
+        }
+
+        if self.dbm.add_tag(table,values_dict):
             #tp.current_tab.content.ids.fi.add_widget(MyCheckBox(text=tag_name))
             tp.current_tab.content.ids.fi.add_widget(TagEntryItem(text=tn))
             self._clear_tag_info()
@@ -1240,8 +1222,16 @@ class MyDataBaseApp(App):
 
         if (table == 'Default tab') | (tn == '') | (ic == '') :
             return
+
+        values_dict = {
+            'Name': tn,
+            'InitialCharacter':ic,
+            'Link':'',
+            'Image':'',
+            'IsFavorite':False
+        }
         
-        if self.dbm.add_tag(table, (tn,ic, '', '')):
+        if self.dbm.add_tag(table, values_dict):
             
             if self.popup_mode == 'entry_info':
                 cur_tab.content.ids.fi.add_widget(MyCheckBox(text=tn))
@@ -1261,24 +1251,6 @@ class MyDataBaseApp(App):
             c_content = SimplePopUp(text='同名のタグがあります', close=self.close_confirm_popup)
             self.c_popup = Popup(title="警告", content=c_content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
             self.c_popup.open()
-
-        """
-        if self.dbm.add_tag(table, (tag_name,initial_char, '', '')):
-            tag_list = sorted([''] + self.dbm.get_tag_items(table, 'Name', convert=True))
-            for th in self.popup.content.ids.tp.tab_list:
-                for child in th.content.children:
-                    if child.__class__.__name__ == 'TagEntryLayout':
-                        key = child.title
-                        if key == table:
-                            for ch in child.children:
-                                if ch.__class__.__name__ == 'GridLayout':
-                                    for c in ch.children:
-                                        c.values = tag_list
-        else:
-            c_content = SimplePopUp(text='同名のタグがあります', close=self.close_confirm_popup)
-            self.c_popup = Popup(title="警告", content=c_content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
-            self.c_popup.open()
-        """
 
     def change_tag(self, tp):
 
@@ -1406,10 +1378,16 @@ class MyDataBaseApp(App):
         self.c_popup = Popup(title="完了", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
         self.c_popup.open()
 
-    def load_tag(self,instance):
-        # 一応バックアップ保存
-        # TODO: どうしようかなと
-        pass
+    def load_tag_csv(self, table, path):
+
+        if table == '':
+            return
+
+        added_tags = self.dbm.add_tag_batch(table, path)
+        msg_lines = [table + 'にタグを追加しました'] + [','.join(added_tags)]
+        content = SimplePopUp(text='\n'.join(msg_lines), close=self.close_confirm_popup)
+        self.c_popup = Popup(title="完了", content=content, size_hint=(None, None), size=(400, 300), auto_dismiss=True)
+        self.c_popup.open()
 
 
     # データ登録ポップアップでのイベント
