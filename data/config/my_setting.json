@@ -21,10 +21,10 @@
         "options":["2","5","10"]
     },
     {
-        "title":"Exclude front cover",
+        "title":"Image View Operation",
         "section":"section1",
-        "key":"exclude_front_cover",
-        "type":"bool",
-        "values":["off","on"]
+        "key":"image_view_operation",
+        "type":"options",
+        "options":["touch","motion"]
     }
 ]
