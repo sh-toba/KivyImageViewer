@@ -5,6 +5,9 @@ DataBaseScreen:
     name: 'ImageView'
     fullscreen: True
 
+    is_favorite: False
+    is_chapter: False
+
     BoxLayout:
         orientation:'vertical'
 
@@ -93,6 +96,10 @@ DataBaseScreen:
                     width: 300
                     padding: 0
                     ImageButton:
+                        source: 'data/icons/star.png'
+                        color: [1.0,0.0,0.0,1.0] if root.is_favorite else [1.0,1.0,1.0,1.0]
+                        on_release: app.change_file_option('favorite')
+                    ImageButton:
                         source: 'data/icons/go_prev.png'
                         on_release: app.change_view_image('previous')
                         nocache: True
@@ -103,3 +110,7 @@ DataBaseScreen:
                         source: 'data/icons/go_next.png'
                         on_release: app.change_view_image('next')
                         nocache: True
+                    ImageButton:
+                        source: 'data/icons/bookmark.png'
+                        color: [0.0,0.8,0.4,1.0] if root.is_chapter else [1.0,1.0,1.0,1.0]
+                        on_release: app.change_file_option('chapter')

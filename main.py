@@ -1674,7 +1674,7 @@ class MyDataBaseApp(App):
 
     def jump_thumbnail(self, text):
         self.change_thumbnailview(text)
-        self.close_popup()
+        self.close_confirm_popup()
 
     def _reload_jump_layout(self):
 
@@ -1991,6 +1991,10 @@ class MyDataBaseApp(App):
             self.image_file_path = os.path.join(self.loaded_file_dir, self.loaded_file_list[tmp_index])
             self.image_file_name = self.loaded_file_list[tmp_index]
 
+        # TODO: screenは移動時に保持して、この書き方は省略する
+        screen = self.root.ids.sm.get_screen('ImageView')
+        screen.is_favorite = (self.image_idx in self.file_options['favorite'])
+        screen.is_chapter = (self.image_idx in self.file_options['chapter'])
 
         tmp_index_sub = tmp_index + 1
         if (tmp_index_sub < 0) | (self.loaded_file_num-1 < tmp_index_sub):
@@ -2025,6 +2029,19 @@ class MyDataBaseApp(App):
         elif option == 'down':
             tmp_fps = fps - self.my_config['gif_speed_span']
             self.gif_speed = (1/tmp_fps) if tmp_fps >= self.GIF_SPEED_RANGE[0] else (1/self.GIF_SPEED_RANGE[0])
+
+    def change_file_option(self, option):
+
+        if self.image_idx in self.file_options[option]:
+            self.file_options[option].remove(self.image_idx)
+        else:
+            self.file_options[option].add(self.image_idx)
+        
+        self._save_file_options()
+
+        screen = self.root.ids.sm.get_screen('ImageView')
+        screen.is_favorite = (self.image_idx in self.file_options['favorite'])
+        screen.is_chapter = (self.image_idx in self.file_options['chapter'])
 
 
     def view_help(self, instance):
@@ -2251,6 +2268,10 @@ class MyDataBaseApp(App):
                 self.change_view_image('next')
             elif keycode[1] in ['up', 'down']:
                 self.change_anim_speed(keycode[1])
+            elif keycode[1] == 'c':
+                self.change_file_option('chapter')
+            elif keycode[1] == 'f':
+                self.change_file_option('favorite')
 
         if keycode[1] == 'backspace':
             self.go_previous_screen()
