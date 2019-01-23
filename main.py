@@ -118,7 +118,6 @@ class ProgressPopUp(BoxLayout):
     pass
 
 
-
 # Screen
 class DataBaseScreen(Screen):
     fullscreen = BooleanProperty(True)
@@ -154,7 +153,9 @@ class MyDataBaseApp(App):
     TRANSITION_SPEED = .4
     MAX_JUMP_BUTTON = 9 # 配置するジャンプボタン数
     GIF_SPEED_RANGE = (10,40)
-    MARGIN_FREE_SPACE = 1.0 # 最低限ディスクに残す容量 
+    MARGIN_FREE_SPACE = 1.0 # 最低限ディスクに残す容量
+    MOTION_THRES_DIST = 0.05
+    MOTION_THRES_TIME = 0.3
     NO_IMAGE = StringProperty('data/noimage.png')
     IC_FILTER_MAP = {
         'あ':['あ','い','う','え','お'],
@@ -241,7 +242,7 @@ class MyDataBaseApp(App):
         'max_thumbnail':int(50),
         'init_thumbnail_filter':str('Nothing'),
         'gif_speed_span':int(10),
-        'exclude_front_cover':False
+        'image_view_operation':str('touch')
     }
 
     # ヘッダー・フッターメニュー用
@@ -295,6 +296,7 @@ class MyDataBaseApp(App):
     # ImageView用
     book_mode = BooleanProperty(False)
     hide_sub_image = BooleanProperty(True)
+    image_btn_disabled = BooleanProperty(False)
     image_idx = NumericProperty()
     image_file_name = StringProperty()
     image_file_path = StringProperty()
@@ -372,7 +374,7 @@ class MyDataBaseApp(App):
 
         # キーボードバインディング
         self._open_mykeyboard()
-
+        
         # データベースクラスのインスタンス取得
         self.dbm = databasemanager.DataBaseManager() 
 
@@ -660,8 +662,11 @@ class MyDataBaseApp(App):
             if sm_cur == 'ThumbnailView':
                 self._wait_cancel()
             # ImageViewでは、フルスクリーンビューを解除する。
-            if (sm_cur == 'ImageView') & self.hide_menu:
-                self.change_view_fullscreen()
+            if sm_cur == 'ImageView':
+                if self.hide_menu:
+                    self.change_view_fullscreen()
+                if self.my_config['image_view_operation'] == 'motion':
+                    Window.unbind(on_motion=self._on_motion)
 
             self._reset_mode()
             sm.transition = SlideTransition(direction='right', duration=self.TRANSITION_SPEED)
@@ -1802,6 +1807,9 @@ class MyDataBaseApp(App):
             #self.image_file_name = self.loaded_file_list[im_index]
 
             #self._reset_mode() #normalモード以外では移らないのでいらない
+            if self.my_config['image_view_operation'] == 'motion':
+                Window.bind(on_motion=self._on_motion)
+                self.image_btn_disabled = True
             self._open_mykeyboard()
             
             self.screen_title = 'イメージビューワー'
@@ -2020,7 +2028,8 @@ class MyDataBaseApp(App):
 
 
     def view_help(self, instance):
-        self.help_on = (instance.state == 'down')
+        if self.my_config['image_view_operation'] == 'touch':
+            self.help_on = (instance.state == 'down')
 
     def _load_template(self, kv_type, file_name):
         # kvファイル名の取得
@@ -2132,6 +2141,78 @@ class MyDataBaseApp(App):
             self.c_popup.open()
             
             return False
+
+
+    def _on_motion(self, instance, etype, motionevent):
+
+        if etype == 'begin':
+            self.btime = time.time()
+            self.bpos = motionevent.spos
+        
+        if etype == 'end':
+            if motionevent.is_double_tap:
+                self._motion_event('double_tap')
+                return
+
+            dt = time.time() - self.btime
+            if dt > self.MOTION_THRES_TIME:
+                return
+            epos = motionevent.spos
+            me = self._calc_motion(self.bpos, epos)
+            self._motion_event(me)
+    
+    def _calc_motion(self, bpos, epos):
+
+        dx = epos[0] - self.bpos[0]
+        dy = epos[1] - self.bpos[1]
+        dist = math.sqrt(dx*dx + dy*dy)
+        angle = math.degrees(math.atan2(dy,dx))
+
+        if dist < self.MOTION_THRES_DIST:
+            return 'exception'
+        
+        if (-30 < angle) & (angle < 30):
+            return 'right'
+        if (30 < angle) & (angle < 60):
+            return 'right-up'
+        if (-60 < angle) & (angle < -30):
+            return 'right-down'
+
+        if ((150 < angle) & (angle < 180)) |  ((-180 < angle) & (angle < -150)):
+            return 'left'
+        if (120 < angle) & (angle < 150):
+            return 'left-up'
+        if (-150 < angle) & (angle < -120):
+            return 'left-down'
+        
+        if (60 < angle) & (angle < 120):
+            return 'up'
+        if (-120 < angle) & (angle < -60):
+            return 'down'
+
+    def _motion_event(self, me):
+
+        if me == 'exception':
+            return
+
+        sm = self.root.ids.sm
+        if sm.current == 'ImageView':
+            if me == 'right':
+                self.change_view_image('next')
+            elif me == 'right-up':
+                self.change_view_image('next', 'chapter')
+            elif me == 'right-down':
+                self.change_view_image('next', 'favorite')
+            elif me == 'left':
+                self.change_view_image('previous')
+            elif me == 'left-up':
+                self.change_view_image('previous', 'favorite')
+            elif me == 'left-down':
+                self.change_view_image('previous', 'chapter')
+            elif me in ['up', 'down']:
+                self.change_anim_speed(me)
+            elif me == 'double_tap':
+                self.change_view_fullscreen()
 
 
     def _open_mykeyboard(self):
